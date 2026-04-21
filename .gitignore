@@ -1,7 +1,6 @@
 /.venv
 osint_session.session
 avatars/*
-parser.py
 nlp_dataset.csv
 osint_database.db
 osint_session.session
