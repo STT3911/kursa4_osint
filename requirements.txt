@@ -1,0 +1,6 @@
+sentence-transformers
+pandas
+Pillow
+matplotlib
+telethon
+git+https://github.com/sherlock-project/sherlock.git

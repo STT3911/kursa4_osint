@@ -1,46 +1,35 @@
-import pandas as pd
-from sentence_transformers import SentenceTransformer, util
-import warnings
+from console_utils import configure_console_output
+from nlp_search_engine import NLPSearchEngine
 
-warnings.filterwarnings('ignore')
 
-df = pd.read_csv('nlp_dataset.csv', sep=';')
+def main() -> int:
+    configure_console_output()
+    engine = NLPSearchEngine()
+    print("AI search is ready. Type 'exit' to stop.")
 
-df = df.dropna(subset=['bio'])
-df = df.reset_index(drop=True)
-print(f" В базе {len(df)} профилей с заполненным описанием.")
+    while True:
+        query = input("\nquery: ").strip()
+        if query.lower() == "exit":
+            break
+        if not query:
+            continue
 
-print("\nЗагрука ии модели")
-model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+        results = engine.search(query, top_k=5)
+        if not results:
+            print("No matches found.")
+            continue
 
-corpus_embeddings = model.encode(df['bio'].astype(str).tolist(), convert_to_tensor=True)
+        print("\n--- SEARCH RESULTS ---")
+        for item in results:
+            username = f"@{item['username']}" if item["username"] else "[hidden]"
+            print(f"score: {item['score']:.2f}")
+            print(f"{item['first_name']} ({username}) | groups: {item['group_name']}")
+            print(f"bio: {item['bio']}")
+            if item["site_list"]:
+                print(f"sites: {item['site_list']}")
+            print("-" * 30)
+    return 0
 
-print("\n AI готов")
-print("="*50)
 
-while True:
-    query = input("\nзапрос: ")
-    if query.lower() == 'exit':
-        break
-        
-    if not query.strip():
-        continue
-
-    query_embedding = model.encode(query, convert_to_tensor=True)
-
-    hits = util.semantic_search(query_embedding, corpus_embeddings, top_k=5)[0]
-
-    print("\n--- РЕЗУЛЬТАТЫ ПОИСКА ---")
-    for hit in hits:
-        idx = hit['corpus_id']
-        score = hit['score'] 
-        
-        name = df['first_name'][idx]
-        username = f"@{df['username'][idx]}" if pd.notna(df['username'][idx]) else "[Скрыт]"
-        bio = df['bio'][idx]
-        group = df['group_name'][idx] if 'group_name' in df.columns else "Неизвестно"
-        
-        print(f"Совпадение: {score:.2f}")
-        print(f" {name} ({username}) |  Чат: {group}")
-        print(f" Bio: {bio}")
-        print("-" * 30) 
+if __name__ == "__main__":
+    raise SystemExit(main())

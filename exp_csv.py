@@ -1,30 +1,34 @@
-import sqlite3
-import csv
+import argparse
 
-def export_db_to_csv():
-    conn = sqlite3.connect('osint_database.db')
-    cursor = conn.cursor()
+from console_utils import configure_console_output
+import database
 
-    cursor.execute('''
-        SELECT p.user_id, p.first_name, p.username, p.bio, p.photo_path, ug.group_name
-        FROM profiles p
-        LEFT JOIN user_groups ug ON p.user_id = ug.user_id
-        GROUP BY p.user_id
-    ''')
-    rows = cursor.fetchall()
 
-    column_names = [description[0] for description in cursor.description]
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Export OSINT datasets to CSV.")
+    parser.add_argument(
+        "--baseline-only",
+        action="store_true",
+        help="Export only the baseline NLP dataset.",
+    )
+    return parser
 
-    csv_filename = 'nlp_dataset.csv'
-    with open(csv_filename, 'w', newline='', encoding='utf-8-sig') as f:
-        writer = csv.writer(f, delimiter=';') # Разделитель точка с запятой для удобства Excel
-        
-        writer.writerow(column_names)
-        
-        writer.writerows(rows)
 
-    print(f"выгружено {len(rows)} профилей в файл {csv_filename}")
-    conn.close()
+def main() -> int:
+    configure_console_output()
+    args = build_parser().parse_args()
+    database.init_db()
 
-if __name__ == '__main__':
-    export_db_to_csv()
+    baseline = database.export_baseline_csv()
+    print(f"Baseline dataset exported to {baseline}")
+
+    if not args.baseline_only:
+        enriched = database.export_enriched_csv()
+        report = database.export_osint_report_csv()
+        print(f"Enriched dataset exported to {enriched}")
+        print(f"OSINT report exported to {report}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
