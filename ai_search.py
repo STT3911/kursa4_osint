@@ -23,6 +23,13 @@ def main() -> int:
         for item in results:
             username = f"@{item['username']}" if item["username"] else "[hidden]"
             print(f"score: {item['score']:.2f}")
+            print(
+                "ai: {label} ({confidence:.2f}, {source})".format(
+                    label=item.get("ai_label", "other"),
+                    confidence=float(item.get("ai_confidence") or 0),
+                    source=item.get("ai_source", "rules"),
+                )
+            )
             print(f"{item['first_name']} ({username}) | groups: {item['group_name']}")
             print(f"bio: {item['bio']}")
             if item["site_list"]:

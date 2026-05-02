@@ -14,3 +14,4 @@ osint_database_runtime.db-journal
 osint_session.session
 sqlite_probe.tmp
 search_results_*.csv
+models/

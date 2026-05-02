@@ -10,6 +10,7 @@ from tkinter import messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
 import database
+from ai_classifier import ProfileClassifier, load_training_report
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from nlp_search_engine import NLPSearchEngine
@@ -35,6 +36,7 @@ class OSINTApp(tk.Tk):
         self.sherlock_queue: queue.Queue[dict] = queue.Queue()
         self.shutdown_event = threading.Event()
         self.search_engine = NLPSearchEngine()
+        self.profile_classifier = ProfileClassifier()
         self.result_cache: dict[str, dict] = {}
         self.current_avatar = None
         self.current_profile_id: int | None = None
@@ -46,6 +48,7 @@ class OSINTApp(tk.Tk):
         self.api_hash_var = tk.StringVar(value=os.getenv("TELEGRAM_API_HASH", ""))
         self.session_var = tk.StringVar(value=os.getenv("TELEGRAM_SESSION", "osint_session"))
         self.group_var = tk.StringVar(value="rabota_chaty1")
+        self.profile_lookup_var = tk.StringVar(value="")
         self.limit_var = tk.StringVar(value="100")
         self.search_var = tk.StringVar()
         self.search_mode_var = tk.StringVar(value="Семантический")
@@ -66,6 +69,7 @@ class OSINTApp(tk.Tk):
         self.osint_summary_var = tk.StringVar(value="")
         self.profile_osint_var = tk.StringVar(value="")
         self.profile_match_var = tk.StringVar(value="")
+        self.profile_ai_var = tk.StringVar(value="")
         self.last_search_results: list[dict] = []
         self.last_search_query = ""
         self.last_search_terms: list[str] = []
@@ -111,6 +115,7 @@ class OSINTApp(tk.Tk):
             ("Session", self.session_var, 1, 0),
             ("Группа", self.group_var, 1, 2),
             ("Лимит новых профилей", self.limit_var, 2, 0),
+            ("Telegram profile", self.profile_lookup_var, 2, 2),
         ]
         for label, variable, row, col in fields:
             ttk.Label(form, text=label).grid(row=row, column=col, sticky="w", padx=(0, 8), pady=6)
@@ -122,6 +127,7 @@ class OSINTApp(tk.Tk):
         button_row = ttk.Frame(self.collect_tab)
         button_row.pack(fill="x", pady=(12, 8))
         ttk.Button(button_row, text="Запустить сбор", command=self.start_collection).pack(side="left")
+        ttk.Button(button_row, text="Проверить профиль", command=self.start_profile_lookup).pack(side="left", padx=8)
         ttk.Button(button_row, text="Экспорт baseline CSV", command=self.export_baseline).pack(side="left", padx=8)
         ttk.Button(button_row, text="Экспорт enriched CSV", command=self.export_enriched).pack(side="left", padx=8)
         ttk.Button(button_row, text="Экспорт OSINT-отчёта", command=self.export_osint_report).pack(side="left", padx=8)
@@ -254,6 +260,8 @@ class OSINTApp(tk.Tk):
             "exposure_level",
             "first_name",
             "username",
+            "ai_label",
+            "ai_confidence",
             "matched_terms",
             "group_name",
             "site_list",
@@ -271,6 +279,8 @@ class OSINTApp(tk.Tk):
             "exposure_level": "Уровень",
             "first_name": "Имя",
             "username": "Username",
+            "ai_label": "AI-класс",
+            "ai_confidence": "AI conf",
             "matched_terms": "Совпавшие термины",
             "group_name": "Чаты",
             "site_list": "Сайты",
@@ -282,6 +292,8 @@ class OSINTApp(tk.Tk):
             "exposure_level": 90,
             "first_name": 180,
             "username": 150,
+            "ai_label": 130,
+            "ai_confidence": 80,
             "matched_terms": 220,
             "group_name": 250,
             "site_list": 260,
@@ -349,8 +361,11 @@ class OSINTApp(tk.Tk):
         ttk.Label(top_frame, textvariable=self.profile_match_var, wraplength=760, justify="left").grid(
             row=7, column=1, sticky="w", pady=2
         )
+        ttk.Label(top_frame, textvariable=self.profile_ai_var, wraplength=760, justify="left").grid(
+            row=8, column=1, sticky="w", pady=2
+        )
         ttk.Button(top_frame, text="Запустить Sherlock для профиля", command=self.run_sherlock_for_current_profile).grid(
-            row=8, column=1, sticky="w", pady=(8, 0)
+            row=9, column=1, sticky="w", pady=(8, 0)
         )
 
         ttk.Label(self.profile_tab, text="Bio").pack(anchor="w", pady=(16, 4))
@@ -496,9 +511,16 @@ class OSINTApp(tk.Tk):
         bio_pct = (with_bio / profiles * 100) if profiles else 0
         username_pct = (with_username / profiles * 100) if profiles else 0
         photo_pct = (with_photo / profiles * 100) if profiles else 0
+        training_report = load_training_report()
+        ai_text = "AI model: rules fallback"
+        if training_report:
+            ai_text = (
+                f"AI model: trained classifier | accuracy={training_report.get('accuracy', 0):.2f} | "
+                f"classes={len(training_report.get('classes', []))}"
+            )
         self.analytics_summary_var.set(
             "Профилей: {profiles} | С bio: {bio} ({bio_pct:.1f}%) | "
-            "С username: {username} ({username_pct:.1f}%) | С фото: {photo} ({photo_pct:.1f}%)".format(
+            "С username: {username} ({username_pct:.1f}%) | С фото: {photo} ({photo_pct:.1f}%) | {ai_text}".format(
                 profiles=profiles,
                 bio=with_bio,
                 bio_pct=bio_pct,
@@ -506,6 +528,7 @@ class OSINTApp(tk.Tk):
                 username_pct=username_pct,
                 photo=with_photo,
                 photo_pct=photo_pct,
+                ai_text=ai_text,
             )
         )
 
@@ -628,6 +651,34 @@ class OSINTApp(tk.Tk):
         self.collection_thread.start()
         self._append_log("Фоновый поток сбора данных запущен.")
 
+    def start_profile_lookup(self) -> None:
+        target = self.profile_lookup_var.get().strip()
+        if not target:
+            messagebox.showinfo("Нет профиля", "Введите @username, ссылку t.me/... или Telegram user id.")
+            return
+
+        collector = TelegramCollector(
+            api_id=self.api_id_var.get().strip(),
+            api_hash=self.api_hash_var.get().strip(),
+            session_name=self.session_var.get().strip(),
+        )
+
+        def runner() -> None:
+            try:
+                asyncio.run(
+                    collector.collect_profile(
+                        target=target,
+                        group_name="direct_lookup",
+                        event_callback=self.event_queue.put,
+                    )
+                )
+                self.search_engine.invalidate()
+            except Exception as exc:
+                self.event_queue.put({"type": "error", "message": str(exc)})
+
+        threading.Thread(target=runner, daemon=True).start()
+        self._append_log(f"Запущена realtime-проверка профиля: {target}")
+
     def export_baseline(self) -> None:
         path = database.export_baseline_csv()
         self._append_log(f"Базовый датасет сохранен: {path}")
@@ -646,8 +697,10 @@ class OSINTApp(tk.Tk):
         self._append_log(f"Сводка по курсовой сохранена: {path}")
 
     def refresh_search_index(self) -> None:
+        self.profile_classifier = ProfileClassifier()
+        self.search_engine = NLPSearchEngine()
         self.search_engine.invalidate()
-        self._append_log("Поисковый индекс помечен на обновление.")
+        self._append_log("Поисковый индекс и AI-классификатор обновлены.")
 
     @staticmethod
     def _format_exposure(value: str) -> str:
@@ -781,7 +834,8 @@ class OSINTApp(tk.Tk):
             f"Запрос: {query} | режим: {mode} | кандидатов: {len(raw_results)} | после фильтров: {len(filtered_results)} | "
             f"лучший профиль: @{top.get('username') or 'скрыт'} | "
             f"NLP={top.get('score', 0):.2f}, гибрид={top.get('hybrid_score', 0):.2f}, "
-            f"OSINT={top.get('osint_score', 0)}, совпадения={top.get('matched_terms') or '-'}"
+            f"OSINT={top.get('osint_score', 0)}, AI={top.get('ai_label', 'other')} "
+            f"({float(top.get('ai_confidence') or 0):.2f}), совпадения={top.get('matched_terms') or '-'}"
         )
 
     def _show_search_results(self, results: list[dict], query: str = "") -> None:
@@ -810,6 +864,8 @@ class OSINTApp(tk.Tk):
                     self._format_exposure(result["exposure_level"]),
                     result["first_name"],
                     username,
+                    result.get("ai_label", "other"),
+                    f"{float(result.get('ai_confidence') or 0):.2f}",
                     result.get("matched_terms", ""),
                     result["group_name"],
                     result["site_list"],
@@ -868,6 +924,8 @@ class OSINTApp(tk.Tk):
                 terms=", ".join(matched_terms) if matched_terms else "прямых лексических совпадений нет"
             )
         )
+        classification = self.profile_classifier.classify(profile)
+        self.profile_ai_var.set(f"AI-классификация: {classification['explanation']}")
 
         self.bio_box.configure(state="normal")
         self.bio_box.delete("1.0", "end")
@@ -1004,6 +1062,14 @@ class OSINTApp(tk.Tk):
                 )
                 self.refresh_dashboard()
                 self.search_engine.invalidate()
+            elif event_type == "profile_collected":
+                user_id = int(event["user_id"])
+                username = event.get("username") or "hidden"
+                self._append_log(f"Realtime-профиль сохранен: @{username} (user_id={user_id}).")
+                self.refresh_dashboard()
+                self.search_engine.invalidate()
+                self.show_profile_card(user_id)
+                self.notebook.select(self.profile_tab)
             elif event_type == "search_results":
                 self._show_search_results(event["results"], str(event.get("query", "")))
             elif event_type == "search_summary":

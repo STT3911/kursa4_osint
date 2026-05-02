@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import csv
 import math
 import re
 import threading
 from collections import Counter
 from pathlib import Path
 from typing import Any
-import csv
 
 import database
+from ai_classifier import ProfileClassifier
 
 try:
     from sentence_transformers import SentenceTransformer, util
@@ -22,8 +23,9 @@ else:
 
 class NLPSearchEngine:
     TERM_ALIASES = {
-        "python": {"django", "flask", "fastapi", "backend"},
+        "python": {"django", "flask", "fastapi", "backend", "разработчик"},
         "backend": {"python", "django", "flask", "fastapi", "api"},
+        "frontend": {"react", "vue", "angular", "typescript", "javascript"},
         "devops": {"docker", "kubernetes", "ci", "cd", "linux"},
         "designer": {"figma", "ui", "ux", "behance", "design"},
         "figma": {"designer", "ui", "ux", "design"},
@@ -45,6 +47,7 @@ class NLPSearchEngine:
         self._lock = threading.Lock()
         self._dirty = True
         self._backend = "semantic"
+        self._profile_classifier = ProfileClassifier(model_name=model_name)
 
     def invalidate(self) -> None:
         with self._lock:
@@ -92,7 +95,10 @@ class NLPSearchEngine:
             for field in ("has_github", "has_linkedin", "has_behance")
         )
         professional_bonus = min(professional_sites, 3) / 3.0
-        return max(0.0, min(osint_score * 0.70 + site_bonus * 0.20 + professional_bonus * 0.10, 1.0))
+        return max(
+            0.0,
+            min(osint_score * 0.70 + site_bonus * 0.20 + professional_bonus * 0.10, 1.0),
+        )
 
     def _enrich_result(self, query: str, row: dict[str, Any]) -> dict[str, Any]:
         query_terms = self._expanded_query_terms(query)
@@ -110,10 +116,16 @@ class NLPSearchEngine:
             semantic_score * 0.70 + osint_boost * 0.20 + match_bonus * 0.10,
             4,
         )
+
+        classification = self._profile_classifier.classify(row)
+        row["ai_label"] = classification["label"]
+        row["ai_confidence"] = classification["confidence"]
+        row["ai_source"] = classification["source"]
+        row["ai_explanation"] = classification["explanation"]
         return row
 
     def _build_lexical_index(self, rows: list[dict[str, Any]]) -> None:
-        doc_tokens = [Counter(self._tokenize(row["bio"])) for row in rows]
+        doc_tokens = [Counter(self._tokenize(self._candidate_text(row))) for row in rows]
         doc_freq: Counter[str] = Counter()
         for tokens in doc_tokens:
             for token in tokens:
@@ -139,7 +151,7 @@ class NLPSearchEngine:
     def _rebuild_index(self) -> None:
         self._ensure_model()
         rows = database.get_search_dataset()
-        texts = [row["bio"] for row in rows]
+        texts = [self._candidate_text(row) for row in rows]
 
         if not texts:
             self._rows = []
@@ -254,6 +266,10 @@ class NLPSearchEngine:
             "osint_score",
             "exposure_level",
             "matched_terms",
+            "ai_label",
+            "ai_confidence",
+            "ai_source",
+            "ai_explanation",
             "group_name",
             "site_count",
             "site_list",

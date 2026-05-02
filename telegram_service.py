@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Callable
 
 import database
+from ai_classifier import normalize_username
 
 try:
     from telethon import TelegramClient
@@ -46,6 +47,104 @@ class TelegramCollector:
     def _emit(self, callback: EventCallback, event_type: str, **payload: object) -> None:
         if callback is not None:
             callback({"type": event_type, **payload})
+
+    async def collect_profile(
+        self,
+        target: str,
+        group_name: str = "direct_lookup",
+        event_callback: EventCallback = None,
+    ) -> dict:
+        database.init_db()
+        if IMPORT_ERROR is not None:
+            raise RuntimeError(
+                "Telethon is not installed. Install dependencies from requirements.txt first."
+            )
+        if not self.api_id or not self.api_hash:
+            raise RuntimeError(
+                "Telegram API credentials are required. Set TELEGRAM_API_ID and TELEGRAM_API_HASH "
+                "or enter them in the desktop app."
+            )
+
+        normalized_target = normalize_username(target)
+        if not normalized_target:
+            raise ValueError("Telegram profile target is empty.")
+        entity_target: str | int = int(normalized_target) if normalized_target.isdigit() else normalized_target
+
+        client = TelegramClient(self.session_name, int(self.api_id), self.api_hash)
+        await client.start()
+        self._emit(event_callback, "log", message=f"Resolving Telegram profile {target}")
+
+        try:
+            user = await client.get_entity(entity_target)
+            bio = ""
+            try:
+                full_user = await client(GetFullUserRequest(id=user))
+                bio = full_user.full_user.about or ""
+            except FloodWaitError as exc:
+                self._emit(
+                    event_callback,
+                    "log",
+                    message=f"Telegram rate limit reached. Sleeping {exc.seconds}s.",
+                )
+                await asyncio.sleep(exc.seconds)
+            except Exception:
+                bio = ""
+
+            photo_path = ""
+            if getattr(user, "photo", None):
+                photo_file = database.AVATARS_DIR / f"{user.id}.jpg"
+                photo_path = str(Path("avatars") / f"{user.id}.jpg").replace("\\", "/")
+                if not photo_file.exists():
+                    try:
+                        await client.download_profile_photo(user, file=str(photo_file))
+                    except FloodWaitError as exc:
+                        self._emit(
+                            event_callback,
+                            "log",
+                            message=f"Photo download rate limit reached. Sleeping {exc.seconds}s.",
+                        )
+                        await asyncio.sleep(exc.seconds)
+                    except Exception:
+                        photo_path = ""
+
+            database.save_profile(
+                user_id=user.id,
+                first_name=getattr(user, "first_name", "") or "",
+                username=getattr(user, "username", "") or "",
+                bio=bio,
+                photo_path=photo_path,
+            )
+            database.link_user_group(user.id, group_name)
+
+            username = getattr(user, "username", "") or ""
+            queued_username = False
+            if username:
+                queued_username = database.queue_username_check_if_needed(user.id, username)
+                if queued_username:
+                    self._emit(
+                        event_callback,
+                        "username_pending",
+                        user_id=user.id,
+                        username=username,
+                    )
+            else:
+                database.mark_username_skipped(user.id, "")
+
+            result = {
+                "user_id": user.id,
+                "username": username,
+                "first_name": getattr(user, "first_name", "") or "",
+                "queued_username": queued_username,
+                "stats": database.get_dashboard_stats(),
+            }
+            self._emit(event_callback, "profile_collected", **result)
+            self._emit(event_callback, "progress", stats=result["stats"])
+            return result
+        except Exception as exc:
+            self._emit(event_callback, "error", message=f"Failed to process profile {target}: {exc}")
+            raise
+        finally:
+            await client.disconnect()
 
     async def collect_group(
         self,

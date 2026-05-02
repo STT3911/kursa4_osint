@@ -1015,9 +1015,12 @@ Group coverage:
 ## NLP and Analytics Part
 
 The NLP subsystem searches profiles by semantic similarity over `bio` text and
-uses the enriched dataset for further ranking improvements. The analytics tab
-visualizes data quality and helps explain whether the dataset is suitable for
-semantic retrieval experiments.
+uses the enriched dataset for hybrid ranking. The AI subsystem classifies
+profiles into professional directions, supports a trained classifier stored in
+`models/profile_classifier.joblib`, and falls back to explainable keyword rules
+when the trained model is not available. The analytics tab visualizes data
+quality and helps explain whether the dataset is suitable for semantic
+retrieval and classification experiments.
 
 Bio length distribution:
 {bio_buckets}
