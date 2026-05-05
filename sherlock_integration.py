@@ -19,7 +19,7 @@ def find_sherlock_command() -> list[str] | None:
         return [binary]
 
     try:
-        import sherlock_project  # noqa: F401
+        import sherlock_project
     except ImportError:
         return None
     return [sys.executable, "-m", "sherlock_project"]

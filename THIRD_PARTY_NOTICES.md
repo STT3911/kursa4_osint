@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-This project integrates the following external open-source component:
+This project integrates the following external open-source components:
 
 ## Sherlock
 - Project: `sherlock-project/sherlock`
@@ -32,3 +32,10 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Snoop
+- Project: `snooppr/snoop`
+- Repository: https://github.com/snooppr/snoop
+- Purpose in this project: optional username enrichment with additional external profile links
+- Installation model: local clone in `tools/snoop` or path provided through `SNOOP_DIR`
+- License: see upstream repository for the current license and distribution terms

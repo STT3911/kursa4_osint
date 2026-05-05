@@ -90,3 +90,32 @@ py -3.12 train_classifier.py --download-model
 - расчет метрик;
 - fallback при отсутствии модели;
 - интеграция результата в интерфейс и гибридное ранжирование.
+
+## Identity matching / account verification
+
+Дополнительно реализован модуль проверки найденных аккаунтов: `identity_matcher.py`.
+Он решает задачу User Identity Linkage: Telegram-профиль и найденный Sherlock/Snoop URL сравниваются как пара, после чего система выдает вероятность, что это один и тот же человек.
+
+Признаки модели:
+
+- сходство Telegram username и username из найденного URL;
+- точное совпадение username;
+- риск коллизии коротких или общих ников;
+- тип сайта и надежность источника `sherlock`/`snoop`;
+- пересечение слов из Telegram bio с URL/названием сайта;
+- качество URL и похожесть имени, если внешние метаданные есть в датасете.
+
+Workflow обучения:
+
+```powershell
+py -3.12 train_identity_matcher.py --export-candidates identity_pairs.csv
+```
+
+После этого аналитик вручную размечает колонку `label`: `1` — тот же человек, `0` — другой человек.
+
+```powershell
+py -3.12 train_identity_matcher.py --labels identity_pairs.csv
+```
+
+Результаты сохраняются в `models/identity_matcher.joblib` и `models/identity_matcher_report.json`.
+Если модель еще не обучена, используется explainable scoring без падения приложения.

@@ -15,7 +15,7 @@ AVATARS_DIR = BASE_DIR / "avatars"
 BASELINE_DATASET_PATH = BASE_DIR / "nlp_dataset.csv"
 ENRICHED_DATASET_PATH = BASE_DIR / "nlp_dataset_enriched.csv"
 OSINT_REPORT_PATH = BASE_DIR / "osint_report.csv"
-COURSEWORK_REPORT_PATH = BASE_DIR / "coursework_report_summary.md"
+SUMMARY_REPORT_PATH = BASE_DIR / "summary_report.md"
 PROFILE_REPORTS_DIR = BASE_DIR / "profile_reports"
 ACTIVE_DB_PATH = DB_PATH
 ACTIVE_DB_URI = False
@@ -79,6 +79,51 @@ def _seed_from_baseline_csv(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _migrate_social_accounts_source_unique(conn: sqlite3.Connection) -> None:
+    row = conn.execute(
+        """
+        SELECT sql
+        FROM sqlite_master
+        WHERE type = 'table' AND name = 'social_accounts'
+        """
+    ).fetchone()
+    table_sql = (row["sql"] if row else "") or ""
+    normalized_sql = table_sql.lower().replace(" ", "").replace("\n", "")
+    if "unique(user_id,site_name,profile_url)" not in normalized_sql:
+        return
+
+    conn.execute("ALTER TABLE social_accounts RENAME TO social_accounts_old")
+    conn.execute(
+        """
+        CREATE TABLE social_accounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            site_name TEXT NOT NULL,
+            profile_url TEXT NOT NULL,
+            username TEXT,
+            source TEXT NOT NULL DEFAULT 'sherlock',
+            checked_at TEXT NOT NULL,
+            UNIQUE(user_id, site_name, profile_url, source)
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO social_accounts
+            (user_id, site_name, profile_url, username, source, checked_at)
+        SELECT
+            user_id,
+            site_name,
+            profile_url,
+            username,
+            COALESCE(NULLIF(source, ''), 'sherlock'),
+            checked_at
+        FROM social_accounts_old
+        """
+    )
+    conn.execute("DROP TABLE social_accounts_old")
+
+
 def _initialize_schema(path: Path, seed_from_csv: bool) -> None:
     conn = sqlite3.connect(path, timeout=30)
     conn.row_factory = sqlite3.Row
@@ -120,6 +165,21 @@ def _initialize_schema(path: Path, seed_from_csv: bool) -> None:
         )
         cursor.execute(
             """
+            CREATE TABLE IF NOT EXISTS enrichment_checks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                username TEXT,
+                tool_name TEXT NOT NULL,
+                status TEXT NOT NULL,
+                checked_at TEXT,
+                found_count INTEGER NOT NULL DEFAULT 0,
+                error_text TEXT,
+                UNIQUE(user_id, tool_name)
+            )
+            """
+        )
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS social_accounts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -128,10 +188,11 @@ def _initialize_schema(path: Path, seed_from_csv: bool) -> None:
                 username TEXT,
                 source TEXT NOT NULL DEFAULT 'sherlock',
                 checked_at TEXT NOT NULL,
-                UNIQUE(user_id, site_name, profile_url)
+                UNIQUE(user_id, site_name, profile_url, source)
             )
             """
         )
+        _migrate_social_accounts_source_unique(conn)
         conn.commit()
         if seed_from_csv:
             _seed_from_baseline_csv(conn)
@@ -181,6 +242,21 @@ def _initialize_memory_schema(seed_from_csv: bool) -> None:
     )
     cursor.execute(
         """
+        CREATE TABLE IF NOT EXISTS enrichment_checks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            username TEXT,
+            tool_name TEXT NOT NULL,
+            status TEXT NOT NULL,
+            checked_at TEXT,
+            found_count INTEGER NOT NULL DEFAULT 0,
+            error_text TEXT,
+            UNIQUE(user_id, tool_name)
+        )
+        """
+    )
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS social_accounts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -189,10 +265,11 @@ def _initialize_memory_schema(seed_from_csv: bool) -> None:
             username TEXT,
             source TEXT NOT NULL DEFAULT 'sherlock',
             checked_at TEXT NOT NULL,
-            UNIQUE(user_id, site_name, profile_url)
+            UNIQUE(user_id, site_name, profile_url, source)
         )
         """
     )
+    _migrate_social_accounts_source_unique(MEMORY_KEEPALIVE)
     MEMORY_KEEPALIVE.commit()
     if seed_from_csv:
         _seed_from_baseline_csv(MEMORY_KEEPALIVE)
@@ -380,6 +457,113 @@ def mark_username_error(user_id: int, username: str, error_text: str) -> None:
         conn.commit()
 
 
+def queue_enrichment_check_if_needed(user_id: int, username: str, tool_name: str) -> bool:
+    init_db()
+    username = (username or "").strip()
+    tool_name = (tool_name or "").strip().lower()
+    if not username or not tool_name:
+        if tool_name:
+            mark_enrichment_skipped(user_id, username, tool_name)
+        return False
+
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT username, status
+            FROM enrichment_checks
+            WHERE user_id = ? AND tool_name = ?
+            """,
+            (user_id, tool_name),
+        ).fetchone()
+        should_queue = (
+            row is None
+            or row["username"] != username
+            or row["status"] in {"error", "skipped"}
+        )
+        if not should_queue:
+            return False
+
+        conn.execute(
+            """
+            INSERT INTO enrichment_checks
+                (user_id, username, tool_name, status, checked_at, found_count, error_text)
+            VALUES (?, ?, ?, 'pending', NULL, 0, NULL)
+            ON CONFLICT(user_id, tool_name) DO UPDATE SET
+                username = excluded.username,
+                status = 'pending',
+                checked_at = NULL,
+                found_count = 0,
+                error_text = NULL
+            """,
+            (user_id, username, tool_name),
+        )
+        conn.commit()
+        return True
+
+
+def mark_enrichment_skipped(user_id: int, username: str | None, tool_name: str) -> None:
+    init_db()
+    tool_name = (tool_name or "").strip().lower()
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO enrichment_checks
+                (user_id, username, tool_name, status, checked_at, found_count, error_text)
+            VALUES (?, ?, ?, 'skipped', ?, 0, NULL)
+            ON CONFLICT(user_id, tool_name) DO UPDATE SET
+                username = excluded.username,
+                status = 'skipped',
+                checked_at = excluded.checked_at,
+                found_count = 0,
+                error_text = NULL
+            """,
+            (user_id, username or "", tool_name, utcnow_text()),
+        )
+        conn.commit()
+
+
+def mark_enrichment_done(user_id: int, username: str, tool_name: str, found_count: int) -> None:
+    init_db()
+    tool_name = (tool_name or "").strip().lower()
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO enrichment_checks
+                (user_id, username, tool_name, status, checked_at, found_count, error_text)
+            VALUES (?, ?, ?, 'done', ?, ?, NULL)
+            ON CONFLICT(user_id, tool_name) DO UPDATE SET
+                username = excluded.username,
+                status = 'done',
+                checked_at = excluded.checked_at,
+                found_count = excluded.found_count,
+                error_text = NULL
+            """,
+            (user_id, username, tool_name, utcnow_text(), found_count),
+        )
+        conn.commit()
+
+
+def mark_enrichment_error(user_id: int, username: str, tool_name: str, error_text: str) -> None:
+    init_db()
+    tool_name = (tool_name or "").strip().lower()
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO enrichment_checks
+                (user_id, username, tool_name, status, checked_at, found_count, error_text)
+            VALUES (?, ?, ?, 'error', ?, 0, ?)
+            ON CONFLICT(user_id, tool_name) DO UPDATE SET
+                username = excluded.username,
+                status = 'error',
+                checked_at = excluded.checked_at,
+                found_count = 0,
+                error_text = excluded.error_text
+            """,
+            (user_id, username, tool_name, utcnow_text(), error_text[:1000]),
+        )
+        conn.commit()
+
+
 def save_social_accounts(
     user_id: int,
     username: str,
@@ -441,6 +625,26 @@ def list_pending_username_checks(limit: int = 100) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def list_pending_enrichment_checks(tool_name: str, limit: int = 100) -> list[dict]:
+    init_db()
+    tool_name = (tool_name or "").strip().lower()
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT user_id, username, tool_name
+            FROM enrichment_checks
+            WHERE tool_name = ?
+              AND status = 'pending'
+              AND username IS NOT NULL
+              AND TRIM(username) <> ''
+            ORDER BY user_id
+            LIMIT ?
+            """,
+            (tool_name, limit),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def get_dashboard_stats() -> dict[str, int]:
     init_db()
     with get_connection() as conn:
@@ -450,6 +654,8 @@ def get_dashboard_stats() -> dict[str, int]:
                 (SELECT COUNT(*) FROM profiles) AS profiles,
                 (SELECT COUNT(*) FROM username_checks WHERE status = 'pending') AS queued_checks,
                 (SELECT COUNT(*) FROM username_checks WHERE status = 'done') AS completed_checks,
+                (SELECT COUNT(*) FROM enrichment_checks WHERE tool_name = 'snoop' AND status = 'pending') AS queued_snoop_checks,
+                (SELECT COUNT(*) FROM enrichment_checks WHERE tool_name = 'snoop' AND status = 'done') AS completed_snoop_checks,
                 (SELECT COUNT(*) FROM social_accounts) AS social_accounts
             """
         ).fetchone()
@@ -479,6 +685,16 @@ def _summary_query() -> str:
                 MAX(CASE WHEN LOWER(site_name) = 'reddit' THEN 1 ELSE 0 END) AS has_reddit
             FROM social_accounts
             GROUP BY user_id
+        ),
+        snoop_data AS (
+            SELECT
+                user_id,
+                status,
+                found_count,
+                error_text,
+                checked_at
+            FROM enrichment_checks
+            WHERE tool_name = 'snoop'
         )
         SELECT
             p.user_id,
@@ -502,6 +718,10 @@ def _summary_query() -> str:
             COALESCE(uc.found_count, 0) AS sherlock_found_count,
             COALESCE(uc.error_text, '') AS sherlock_error_text,
             COALESCE(uc.checked_at, '') AS sherlock_checked_at,
+            COALESCE(sn.status, '') AS snoop_status,
+            COALESCE(sn.found_count, 0) AS snoop_found_count,
+            COALESCE(sn.error_text, '') AS snoop_error_text,
+            COALESCE(sn.checked_at, '') AS snoop_checked_at,
             (
                 CASE WHEN TRIM(COALESCE(p.username, '')) <> '' THEN 15 ELSE 0 END +
                 CASE WHEN TRIM(COALESCE(p.bio, '')) <> '' THEN 20 ELSE 0 END +
@@ -548,6 +768,7 @@ def _summary_query() -> str:
         LEFT JOIN group_data g ON g.user_id = p.user_id
         LEFT JOIN social_data s ON s.user_id = p.user_id
         LEFT JOIN username_checks uc ON uc.user_id = p.user_id
+        LEFT JOIN snoop_data sn ON sn.user_id = p.user_id
     """
 
 
@@ -670,6 +891,8 @@ def list_user_connections() -> list[dict]:
 
 def get_profile_card(user_id: int) -> dict:
     init_db()
+    from identity_matcher import IdentityMatcher
+
     with get_connection() as conn:
         profile_row = conn.execute(
             _summary_query() + " WHERE p.user_id = ?",
@@ -698,10 +921,13 @@ def get_profile_card(user_id: int) -> dict:
             (user_id,),
         ).fetchall()
 
+    profile = dict(profile_row)
+    matcher = IdentityMatcher()
+    social_accounts = matcher.match_many(profile, [dict(row) for row in social_rows])
     return {
-        "profile": dict(profile_row),
+        "profile": profile,
         "groups": [dict(row) for row in group_rows],
-        "social_accounts": [dict(row) for row in social_rows],
+        "social_accounts": social_accounts,
     }
 
 
@@ -795,7 +1021,14 @@ def export_profile_report_markdown(user_id: int, path: Path | None = None) -> Pa
         for row in data["groups"]
     ) or "- No groups"
     social_accounts = "\n".join(
-        f"- {row['site_name']}: {row['profile_url']}"
+        "- {site}: {url} [{source}] - same-person {score}% ({verdict}); {reason}".format(
+            site=row["site_name"],
+            url=row["profile_url"],
+            source=row["source"],
+            score=row.get("same_person_percent", 0),
+            verdict=row.get("identity_verdict", "not_scored"),
+            reason=row.get("identity_explanation", "no identity score"),
+        )
         for row in data["social_accounts"]
     ) or "- No external accounts found"
 
@@ -826,6 +1059,8 @@ Groups:
 - Sherlock status: {profile['sherlock_status'] or 'not processed'}
 - External accounts found: {profile['site_count']}
 - Sites: {profile['site_list'] or 'none'}
+- Snoop status: {profile['snoop_status'] or 'not processed'}
+- Snoop accounts found: {profile['snoop_found_count']}
 
 Accounts:
 {social_accounts}
@@ -838,7 +1073,7 @@ Accounts:
 Analytical note:
 The score is based on the amount of open profile information available in the
 local dataset: username, bio, avatar, Telegram group presence, and external
-accounts found through Sherlock.
+accounts found through Sherlock and Snoop.
 """
     target.write_text(content, encoding="utf-8")
     return target
@@ -911,6 +1146,10 @@ def export_enriched_csv(path: Path | None = None) -> Path:
             "sherlock_found_count",
             "sherlock_error_text",
             "sherlock_checked_at",
+            "snoop_status",
+            "snoop_found_count",
+            "snoop_error_text",
+            "snoop_checked_at",
             "osint_score",
             "exposure_level",
         ],
@@ -943,15 +1182,18 @@ def export_osint_report_csv(path: Path | None = None) -> Path:
             "sherlock_status",
             "sherlock_found_count",
             "sherlock_checked_at",
+            "snoop_status",
+            "snoop_found_count",
+            "snoop_checked_at",
             "last_parsed_at",
         ],
         [dict(row) for row in rows],
     )
 
 
-def export_coursework_report_markdown(path: Path | None = None) -> Path:
+def export_summary_report_markdown(path: Path | None = None) -> Path:
     init_db()
-    target = path or COURSEWORK_REPORT_PATH
+    target = path or SUMMARY_REPORT_PATH
     snapshot = get_analytics_snapshot()
     osint_snapshot = get_osint_analysis_snapshot()
     totals = snapshot["totals"]
@@ -981,7 +1223,7 @@ def export_coursework_report_markdown(path: Path | None = None) -> Path:
         for row in osint_snapshot["group_stats"][:5]
     ) or "- No groups"
 
-    content = f"""# Coursework Report Summary
+    content = f"""# Summary Report
 
 ## Dataset Overview
 
@@ -993,7 +1235,7 @@ def export_coursework_report_markdown(path: Path | None = None) -> Path:
 ## OSINT Part
 
 The OSINT subsystem collects public Telegram profiles, stores user-to-group links,
-exports datasets, and enriches usernames through Sherlock. Each profile receives
+exports datasets, and enriches usernames through Sherlock and optional Snoop. Each profile receives
 an `osint_score` and an `exposure_level` based on available identifiers, profile
 text, photos, group presence, and external account findings.
 

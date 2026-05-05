@@ -1,0 +1,4 @@
+﻿label;rule_score;rule_verdict;user_id;telegram_name;telegram_username;telegram_bio;site_name;profile_url;account_username;source;account_name;account_bio;notes
+;0.9086;likely_same_person;10;Ivan Petrov;ivan_backend;Python FastAPI backend developer GitHub;GitHub;https://github.com/ivan_backend;ivan_backend;sherlock;;;
+;0.7631;likely_same_person;10;Ivan Petrov;ivan_backend;Python FastAPI backend developer GitHub;Pinterest;https://pinterest.com/random_user;ivan_backend;sherlock;;;
+;0.657;possible_same_person;11;Anna;dev;designer figma ui;GitHub;https://github.com/dev;dev;snoop;;;

@@ -1,14 +1,15 @@
 import argparse
 import asyncio
-import os
 import sys
 
 from console_utils import configure_console_output
+from config import env_first, load_env_file
 import database
 from telegram_service import TelegramCollector
 
 
 def build_parser() -> argparse.ArgumentParser:
+    load_env_file()
     parser = argparse.ArgumentParser(
         description="Collect Telegram profiles and queue Sherlock enrichment."
     )
@@ -25,17 +26,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--api-id",
-        default=os.getenv("TELEGRAM_API_ID", ""),
-        help="Telegram API ID. Falls back to TELEGRAM_API_ID.",
+        default=env_first("TELEGRAM_API_ID", "TG_API_ID"),
+        help="Telegram API ID. Falls back to TELEGRAM_API_ID or TG_API_ID.",
     )
     parser.add_argument(
         "--api-hash",
-        default=os.getenv("TELEGRAM_API_HASH", ""),
-        help="Telegram API hash. Falls back to TELEGRAM_API_HASH.",
+        default=env_first("TELEGRAM_API_HASH", "TG_API_HASH"),
+        help="Telegram API hash. Falls back to TELEGRAM_API_HASH or TG_API_HASH.",
     )
     parser.add_argument(
         "--session",
-        default=os.getenv("TELEGRAM_SESSION", "osint_session"),
+        default=env_first("TELEGRAM_SESSION") or "osint_session",
         help="Telethon session name.",
     )
     return parser

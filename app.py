@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import queue
 import threading
 import tkinter as tk
@@ -10,11 +9,13 @@ from tkinter import messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
 import database
+from config import env_first, load_env_file
 from ai_classifier import ProfileClassifier, load_training_report
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from nlp_search_engine import NLPSearchEngine
 from sherlock_integration import is_sherlock_available, process_username_check
+from snoop_integration import is_snoop_available, process_snoop_check
 from telegram_service import TelegramCollector
 
 try:
@@ -27,6 +28,7 @@ except ImportError:  # pragma: no cover - runtime dependency guard
 class OSINTApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
+        load_env_file()
         self.title("OSINT Desktop")
         self.geometry("1200x760")
         self.minsize(1024, 700)
@@ -34,6 +36,7 @@ class OSINTApp(tk.Tk):
         database.init_db()
         self.event_queue: queue.Queue[dict] = queue.Queue()
         self.sherlock_queue: queue.Queue[dict] = queue.Queue()
+        self.snoop_queue: queue.Queue[dict] = queue.Queue()
         self.shutdown_event = threading.Event()
         self.search_engine = NLPSearchEngine()
         self.profile_classifier = ProfileClassifier()
@@ -44,9 +47,9 @@ class OSINTApp(tk.Tk):
         self.collection_thread: threading.Thread | None = None
         self.osint_profile_cache: dict[str, dict] = {}
 
-        self.api_id_var = tk.StringVar(value=os.getenv("TELEGRAM_API_ID", ""))
-        self.api_hash_var = tk.StringVar(value=os.getenv("TELEGRAM_API_HASH", ""))
-        self.session_var = tk.StringVar(value=os.getenv("TELEGRAM_SESSION", "osint_session"))
+        self.api_id_var = tk.StringVar(value=env_first("TELEGRAM_API_ID", "TG_API_ID"))
+        self.api_hash_var = tk.StringVar(value=env_first("TELEGRAM_API_HASH", "TG_API_HASH"))
+        self.session_var = tk.StringVar(value=env_first("TELEGRAM_SESSION") or "osint_session")
         self.group_var = tk.StringVar(value="rabota_chaty1")
         self.profile_lookup_var = tk.StringVar(value="")
         self.limit_var = tk.StringVar(value="100")
@@ -61,7 +64,7 @@ class OSINTApp(tk.Tk):
         self.completed_count_var = tk.StringVar()
         self.social_count_var = tk.StringVar()
         self.sherlock_status_var = tk.StringVar(
-            value="Sherlock: available" if is_sherlock_available() else "Sherlock: not installed"
+            value=self._build_tools_status()
         )
         self.analytics_summary_var = tk.StringVar(value="")
         self.search_summary_var = tk.StringVar(value="")
@@ -76,6 +79,7 @@ class OSINTApp(tk.Tk):
 
         self._build_ui()
         self._start_sherlock_worker()
+        self._start_snoop_worker()
         self._resume_pending_checks()
         self.refresh_dashboard()
         self.after(200, self._drain_event_queue)
@@ -131,7 +135,7 @@ class OSINTApp(tk.Tk):
         ttk.Button(button_row, text="Экспорт baseline CSV", command=self.export_baseline).pack(side="left", padx=8)
         ttk.Button(button_row, text="Экспорт enriched CSV", command=self.export_enriched).pack(side="left", padx=8)
         ttk.Button(button_row, text="Экспорт OSINT-отчёта", command=self.export_osint_report).pack(side="left", padx=8)
-        ttk.Button(button_row, text="Сводка курсовой", command=self.export_coursework_summary).pack(side="left", padx=8)
+        ttk.Button(button_row, text="Сводка", command=self.export_summary).pack(side="left", padx=8)
 
         stats_frame = ttk.LabelFrame(self.collect_tab, text="Статистика", padding=12)
         stats_frame.pack(fill="x", pady=(0, 8))
@@ -367,6 +371,9 @@ class OSINTApp(tk.Tk):
         ttk.Button(top_frame, text="Запустить Sherlock для профиля", command=self.run_sherlock_for_current_profile).grid(
             row=9, column=1, sticky="w", pady=(8, 0)
         )
+        ttk.Button(top_frame, text="Запустить Snoop для профиля", command=self.run_snoop_for_current_profile).grid(
+            row=9, column=1, sticky="w", padx=(220, 0), pady=(8, 0)
+        )
 
         ttk.Label(self.profile_tab, text="Bio").pack(anchor="w", pady=(16, 4))
         self.bio_box = ScrolledText(self.profile_tab, height=8, wrap="word")
@@ -389,15 +396,21 @@ class OSINTApp(tk.Tk):
         self.log_box.see("end")
         self.log_box.configure(state="disabled")
 
+    @staticmethod
+    def _build_tools_status() -> str:
+        sherlock_state = "available" if is_sherlock_available() else "not installed"
+        snoop_state = "available" if is_snoop_available() else "not installed"
+        return f"Sherlock: {sherlock_state} | Snoop: {snoop_state}"
+
     def refresh_dashboard(self) -> None:
         stats = database.get_dashboard_stats()
         self.profiles_count_var.set(str(stats["profiles"]))
-        self.queued_count_var.set(str(stats["queued_checks"]))
-        self.completed_count_var.set(str(stats["completed_checks"]))
-        self.social_count_var.set(str(stats["social_accounts"]))
-        self.sherlock_status_var.set(
-            "Sherlock: available" if is_sherlock_available() else "Sherlock: not installed"
+        self.queued_count_var.set(f"Sherlock {stats['queued_checks']} | Snoop {stats.get('queued_snoop_checks', 0)}")
+        self.completed_count_var.set(
+            f"Sherlock {stats['completed_checks']} | Snoop {stats.get('completed_snoop_checks', 0)}"
         )
+        self.social_count_var.set(str(stats["social_accounts"]))
+        self.sherlock_status_var.set(self._build_tools_status())
         self.refresh_osint_analysis()
         self.refresh_analytics()
 
@@ -585,14 +598,24 @@ class OSINTApp(tk.Tk):
     def _resume_pending_checks(self) -> None:
         for item in database.list_pending_username_checks(limit=1000):
             self.sherlock_queue.put(item)
+        for item in database.list_pending_enrichment_checks("snoop", limit=1000):
+            self.snoop_queue.put(item)
         pending = database.get_dashboard_stats()["queued_checks"]
         if pending:
             self._append_log(f"Возобновлено проверок Sherlock из базы данных: {pending}.")
+        pending_snoop = database.get_dashboard_stats().get("queued_snoop_checks", 0)
+        if pending_snoop:
+            self._append_log(f"Возобновлено проверок Snoop из базы данных: {pending_snoop}.")
 
     def _start_sherlock_worker(self) -> None:
         worker = threading.Thread(target=self._sherlock_worker_loop, daemon=True)
         worker.start()
         self.sherlock_worker = worker
+
+    def _start_snoop_worker(self) -> None:
+        worker = threading.Thread(target=self._snoop_worker_loop, daemon=True)
+        worker.start()
+        self.snoop_worker = worker
 
     def _sherlock_worker_loop(self) -> None:
         while not self.shutdown_event.is_set():
@@ -616,6 +639,24 @@ class OSINTApp(tk.Tk):
             )
             self.event_queue.put({"type": "progress", "stats": database.get_dashboard_stats()})
             self.sherlock_queue.task_done()
+
+    def _snoop_worker_loop(self) -> None:
+        while not self.shutdown_event.is_set():
+            try:
+                item = self.snoop_queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            if item is None:
+                break
+
+            user_id = int(item["user_id"])
+            username = str(item["username"])
+            self.event_queue.put({"type": "log", "message": f"Запущен Snoop для @{username}"})
+            result = process_snoop_check(user_id=user_id, username=username)
+            self.search_engine.invalidate()
+            self.event_queue.put({"type": "log", "message": result["message"]})
+            self.event_queue.put({"type": "progress", "stats": database.get_dashboard_stats()})
+            self.snoop_queue.task_done()
 
     def start_collection(self) -> None:
         if self.collection_thread and self.collection_thread.is_alive():
@@ -692,9 +733,9 @@ class OSINTApp(tk.Tk):
         path = database.export_osint_report_csv()
         self._append_log(f"OSINT-отчет сохранен: {path}")
 
-    def export_coursework_summary(self) -> None:
-        path = database.export_coursework_report_markdown()
-        self._append_log(f"Сводка по курсовой сохранена: {path}")
+    def export_summary(self) -> None:
+        path = database.export_summary_report_markdown()
+        self._append_log(f"Сводка сохранена: {path}")
 
     def refresh_search_index(self) -> None:
         self.profile_classifier = ProfileClassifier()
@@ -902,8 +943,11 @@ class OSINTApp(tk.Tk):
 
         status = profile["sherlock_status"] or "не выполнялась"
         error_text = profile["sherlock_error_text"] or "нет"
+        snoop_status = profile.get("snoop_status") or "не выполнялась"
+        snoop_error_text = profile.get("snoop_error_text") or "нет"
         self.profile_status_var.set(
-            f"Статус Sherlock: {status}; найдено={profile['sherlock_found_count']}; ошибка={error_text}"
+            f"Sherlock: {status}; найдено={profile['sherlock_found_count']}; ошибка={error_text} | "
+            f"Snoop: {snoop_status}; найдено={profile.get('snoop_found_count', 0)}; ошибка={snoop_error_text}"
         )
         self.profile_sites_var.set(f"Сайты: {profile['site_list'] or 'нет данных'}")
         self.profile_avatar_path_var.set(f"Аватар: {profile['photo_path'] or 'недоступен'}")
@@ -941,7 +985,15 @@ class OSINTApp(tk.Tk):
         social_lines = []
         for account in data["social_accounts"]:
             social_lines.append(
-                f"{account['site_name']}: {account['profile_url']} ({account['source']}, {account['checked_at']})"
+                "{site}: {url} ({source}, {checked_at}) | same-person {score}% | {verdict} | {reason}".format(
+                    site=account["site_name"],
+                    url=account["profile_url"],
+                    source=account["source"],
+                    checked_at=account["checked_at"],
+                    score=account.get("same_person_percent", 0),
+                    verdict=account.get("identity_verdict", "not_scored"),
+                    reason=account.get("identity_explanation", "no identity score"),
+                )
             )
         self.social_box.configure(state="normal")
         self.social_box.delete("1.0", "end")
@@ -989,7 +1041,7 @@ class OSINTApp(tk.Tk):
                 f"Информативность bio ({profile['bio_length']} символов): +{bio_depth_points}",
                 f"Аватар сохранён: +{photo_points}",
                 f"Связи с Telegram-группами ({profile['group_count']}): +{group_points}",
-                f"Внешние аккаунты Sherlock ({profile['site_count']}): +{social_points}",
+                f"Внешние аккаунты OSINT-инструментов ({profile['site_count']}): +{social_points}",
                 f"Итог: {profile['osint_score']}/100, уровень: {profile['exposure_level']}",
             ]
         )
@@ -1012,6 +1064,31 @@ class OSINTApp(tk.Tk):
             self.event_queue.put(
                 {
                     "type": "manual_sherlock_done",
+                    "user_id": user_id,
+                    "message": result["message"],
+                }
+            )
+
+        threading.Thread(target=runner, daemon=True).start()
+
+    def run_snoop_for_current_profile(self) -> None:
+        if self.current_profile_id is None:
+            messagebox.showinfo("Профиль не выбран", "Сначала откройте карточку профиля из результатов поиска.")
+            return
+        if not self.current_profile_username:
+            messagebox.showinfo("Нет username", "У выбранного профиля нет username для проверки через Snoop.")
+            return
+
+        user_id = self.current_profile_id
+        username = self.current_profile_username
+        self._append_log(f"Запущена ручная проверка Snoop для @{username}.")
+
+        def runner() -> None:
+            result = process_snoop_check(user_id=user_id, username=username)
+            self.search_engine.invalidate()
+            self.event_queue.put(
+                {
+                    "type": "manual_enrichment_done",
                     "user_id": user_id,
                     "message": result["message"],
                 }
@@ -1053,6 +1130,12 @@ class OSINTApp(tk.Tk):
                     {"user_id": event["user_id"], "username": event["username"]}
                 )
                 self.refresh_dashboard()
+            elif event_type == "enrichment_pending":
+                if event.get("tool_name") == "snoop":
+                    self.snoop_queue.put(
+                        {"user_id": event["user_id"], "username": event["username"], "tool_name": "snoop"}
+                    )
+                self.refresh_dashboard()
             elif event_type == "completed":
                 stats = event["stats"]
                 self._append_log(
@@ -1080,6 +1163,10 @@ class OSINTApp(tk.Tk):
                 self._append_log(str(event.get("message", "")))
                 self.refresh_dashboard()
                 self.show_profile_card(int(event["user_id"]))
+            elif event_type == "manual_enrichment_done":
+                self._append_log(str(event.get("message", "")))
+                self.refresh_dashboard()
+                self.show_profile_card(int(event["user_id"]))
             elif event_type == "error":
                 self._append_log(f"ОШИБКА: {event.get('message', '')}")
                 self.refresh_dashboard()
@@ -1091,6 +1178,7 @@ class OSINTApp(tk.Tk):
     def _on_close(self) -> None:
         self.shutdown_event.set()
         self.sherlock_queue.put(None)
+        self.snoop_queue.put(None)
         self.destroy()
 
 
