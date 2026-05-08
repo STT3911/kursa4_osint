@@ -385,7 +385,7 @@ class OSINTApp(tk.Tk):
         ).pack(side="left", padx=(8, 0))
         ttk.Button(
             enrichment_buttons,
-            text="Запустить Maigret",
+            text="Обогатить через Maigret",
             command=self.run_maigret_for_current_profile,
         ).pack(side="left", padx=(8, 0))
 

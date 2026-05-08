@@ -1,52 +1,55 @@
-# Чеклист сдачи
+# Чеклист перед сдачей
 
-## Готово
+## Код
 
-- [x] Исходный код desktop-приложения.
-- [x] Локальная SQLite-база для демонстрации.
-- [x] CSV-выгрузки: baseline, enriched и OSINT-report.
-- [x] OSINT-обогащение через Sherlock, опционально Snoop и ручной Maigret.
-- [x] NLP-поиск и гибридное ранжирование.
-- [x] AI-классификация профилей.
-- [x] Identity matching для найденных внешних аккаунтов.
-- [x] README с установкой и запуском.
-- [x] Итоговый текстовый отчет `COURSEWORK_REPORT.md`.
-- [x] Сценарий защиты `DEMO_GUIDE.md`.
-- [x] Smoke-тесты ядра анализа.
-- [x] Секреты и session-файлы исключены из проекта.
+- [x] Desktop-интерфейс `app.py`.
+- [x] Веб-витрина `streamlit_app.py`.
+- [x] SQLite-слой `database.py`.
+- [x] Telegram-сбор.
+- [x] Sherlock/Snoop/Maigret интеграции.
+- [x] NLP-поиск.
+- [x] AI-классификатор.
+- [x] Identity matching.
+- [x] Unit-тесты.
 
-## Перед отправкой преподавателю
+## Документация
 
-- [ ] Вставить ФИО, группу, преподавателя и год на титульный лист DOCX.
-- [ ] При необходимости заменить учебную тему на формулировку из методички.
-- [ ] Проверить, что локальный `.env` не попадает в архив.
-- [ ] Проверить, что `osint_session.session` не попадает в архив.
-- [ ] Запустить smoke-тесты.
-- [ ] Открыть `COURSEWORK_REPORT.docx` и быстро просмотреть страницы.
-- [ ] Запустить приложение и пройти сценарий из `DEMO_GUIDE.md`.
+- [x] `README.md`.
+- [x] `COURSEWORK_REPORT.md`.
+- [x] `COURSEWORK_REPORT.docx`.
+- [x] `CYBERSECURITY_PART.md`.
+- [x] `AI_PART.md`.
+- [x] `DEMO_GUIDE.md`.
+- [x] `HANDOFF_WITHOUT_GITHUB.md`.
+- [x] `THIRD_PARTY_NOTICES.md`.
 
-## Рекомендуемый состав архива
+## Модели и данные
 
-- исходники `.py`;
-- `requirements.txt`;
-- `.env.example`;
-- `README.md`;
-- `COURSEWORK_REPORT.md`;
-- `COURSEWORK_REPORT.docx`;
-- `DEMO_GUIDE.md`;
-- `SUBMISSION_CHECKLIST.md`;
-- `THIRD_PARTY_NOTICES.md`;
-- `models/identity_matcher.joblib`;
-- `models/identity_matcher_report.json`;
-- демонстрационные CSV/DB-файлы, если это разрешено требованиями кафедры.
+- [x] `models/profile_classifier.joblib`.
+- [x] `models/profile_classifier_report.json`.
+- [x] `models/identity_matcher.joblib`.
+- [x] `models/identity_matcher_report.json`.
+- [x] `osint_database.db`.
+- [x] `nlp_dataset.csv`.
+- [x] `nlp_dataset_enriched.csv`.
+- [x] `osint_report.csv`.
+- [x] `identity_pairs.csv`.
 
-## Не включать в архив
+## Не класть в архив
 
-- `.env`;
-- `*.session`;
-- `__pycache__/`;
-- `.venv/`;
-- `*.db-journal`;
-- runtime-базы;
-- smoke-песочницы;
-- backup-файлы.
+- [ ] `.venv/`.
+- [ ] `.git/`.
+- [ ] `.env`.
+- [ ] `*.session`.
+- [ ] `__pycache__/`.
+- [ ] `.smoke_*`.
+- [ ] `.docx_render/`.
+- [ ] `*.db-journal`.
+
+## Проверка
+
+```powershell
+$env:PYTHONDONTWRITEBYTECODE="1"
+.\.venv\Scripts\python.exe -m unittest discover -s tests
+```
+

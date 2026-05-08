@@ -37,110 +37,174 @@ def configure_page() -> None:
         """
         <style>
             :root {
-                --bg: #f4f8fb;
-                --surface: #ffffff;
-                --surface-alt: #eef5f7;
-                --text: #17323b;
-                --muted: #5f7880;
-                --primary: #0f6c7d;
-                --accent: #1e9f8f;
-                --warning: #f39c12;
-                --danger: #d9534f;
-                --shadow: 0 12px 30px rgba(15, 35, 45, 0.08);
-                --radius: 18px;
+                --bg: #080d12;
+                --surface: #101820;
+                --surface-alt: #14212b;
+                --line: #263846;
+                --text: #e7f2f3;
+                --muted: #8fa9b2;
+                --primary: #46f0a7;
+                --accent: #47c7ff;
+                --warning: #ffc857;
+                --danger: #ff6b6b;
+                --shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
+                --radius: 8px;
             }
             .stApp {
-                background:
-                    radial-gradient(circle at top left, rgba(30, 159, 143, 0.10), transparent 30%),
-                    radial-gradient(circle at top right, rgba(15, 108, 125, 0.10), transparent 28%),
-                    linear-gradient(180deg, #f7fbfd 0%, #eef5f7 100%);
+                background: var(--bg);
+                color: var(--text);
             }
             .block-container {
-                padding-top: 2rem;
+                padding-top: 1.25rem;
                 padding-bottom: 2rem;
+                max-width: 1360px;
+            }
+            [data-testid="stSidebar"] {
+                background: #0c131a;
+                border-right: 1px solid var(--line);
+            }
+            [data-testid="stSidebar"] * {
+                color: var(--text);
+            }
+            h1, h2, h3, h4, h5, h6, p, li, label, span, div {
+                color: var(--text);
+            }
+            .stMarkdown, .stCaption, .stDataFrame, .stTable {
+                color: var(--text);
+            }
+            .stAlert {
+                background: #102331;
+                border: 1px solid #24465c;
+                color: var(--text);
             }
             .hero {
-                padding: 1.4rem 1.6rem;
-                border-radius: 24px;
-                color: white;
-                background: linear-gradient(135deg, #103d4d 0%, #0f6c7d 55%, #1e9f8f 100%);
-                box-shadow: 0 18px 40px rgba(16, 61, 77, 0.22);
-                margin-bottom: 1.25rem;
+                padding: 1rem 1.1rem;
+                border-radius: var(--radius);
+                background: #0f171f;
+                border: 1px solid var(--line);
+                box-shadow: var(--shadow);
+                margin-bottom: 1rem;
+                position: relative;
             }
             .hero h1 {
                 margin: 0;
-                font-size: 2rem;
-                letter-spacing: 0.02em;
+                font-size: 1.55rem;
+                letter-spacing: 0;
+                font-family: Consolas, "Courier New", monospace;
+                color: var(--primary);
             }
             .hero p {
                 margin: 0.4rem 0 0 0;
-                color: rgba(255,255,255,0.88);
+                color: var(--muted);
+                font-family: Consolas, "Courier New", monospace;
+            }
+            .hero::before {
+                content: "LIVE LOCAL INSTANCE";
+                position: absolute;
+                right: 1rem;
+                top: 1rem;
+                color: #07110d;
+                background: var(--primary);
+                border-radius: 4px;
+                padding: 0.18rem 0.45rem;
+                font-size: 0.72rem;
+                font-weight: 700;
             }
             .metric-card {
-                background: rgba(255, 255, 255, 0.92);
-                border: 1px solid rgba(15, 108, 125, 0.10);
+                background: var(--surface);
+                border: 1px solid var(--line);
                 box-shadow: var(--shadow);
                 border-radius: var(--radius);
-                padding: 1rem 1.1rem;
-                min-height: 116px;
+                padding: 0.9rem 1rem;
+                min-height: 104px;
             }
             .metric-label {
                 color: var(--muted);
-                font-size: 0.92rem;
+                font-size: 0.78rem;
                 text-transform: uppercase;
-                letter-spacing: 0.08em;
+                letter-spacing: 0;
+                font-family: Consolas, "Courier New", monospace;
             }
             .metric-value {
-                margin-top: 0.35rem;
-                font-size: 2rem;
+                margin-top: 0.28rem;
+                font-size: 1.8rem;
                 font-weight: 700;
-                color: var(--text);
+                color: var(--primary);
+                font-family: Consolas, "Courier New", monospace;
             }
             .metric-note {
                 margin-top: 0.2rem;
                 color: var(--muted);
-                font-size: 0.92rem;
+                font-size: 0.86rem;
             }
             .section-card {
-                background: rgba(255,255,255,0.94);
-                border: 1px solid rgba(15, 108, 125, 0.10);
+                background: var(--surface);
+                border: 1px solid var(--line);
                 box-shadow: var(--shadow);
                 border-radius: var(--radius);
-                padding: 1.1rem 1.2rem;
+                padding: 0.9rem 1rem;
                 margin-bottom: 1rem;
+                font-family: Consolas, "Courier New", monospace;
             }
             .profile-card {
-                background: rgba(255,255,255,0.96);
-                border: 1px solid rgba(15, 108, 125, 0.10);
+                background: var(--surface);
+                border: 1px solid var(--line);
                 box-shadow: var(--shadow);
-                border-radius: 20px;
+                border-radius: var(--radius);
                 padding: 1rem 1.1rem;
                 margin-bottom: 0.85rem;
             }
             .badge {
                 display: inline-block;
-                padding: 0.28rem 0.7rem;
-                border-radius: 999px;
-                font-size: 0.82rem;
+                padding: 0.22rem 0.55rem;
+                border-radius: 4px;
+                font-size: 0.78rem;
                 font-weight: 600;
                 margin-right: 0.35rem;
                 margin-bottom: 0.35rem;
+                font-family: Consolas, "Courier New", monospace;
             }
             .badge-exposure-high, .badge-confidence-probable, .badge-review-confirmed {
-                background: rgba(30, 159, 143, 0.14);
-                color: #117667;
+                background: rgba(70, 240, 167, 0.14);
+                color: var(--primary);
+                border: 1px solid rgba(70, 240, 167, 0.35);
             }
             .badge-exposure-medium, .badge-confidence-weak, .badge-review-pending {
-                background: rgba(243, 156, 18, 0.16);
-                color: #a66700;
+                background: rgba(255, 200, 87, 0.14);
+                color: var(--warning);
+                border: 1px solid rgba(255, 200, 87, 0.35);
             }
             .badge-exposure-low, .badge-confidence-unverified, .badge-review-rejected {
-                background: rgba(217, 83, 79, 0.12);
-                color: #b6423f;
+                background: rgba(255, 107, 107, 0.12);
+                color: var(--danger);
+                border: 1px solid rgba(255, 107, 107, 0.35);
             }
             .tiny-note {
                 color: var(--muted);
                 font-size: 0.9rem;
+            }
+            div[data-testid="stButton"] > button,
+            div[data-testid="stDownloadButton"] > button {
+                background: #132531;
+                color: var(--text);
+                border: 1px solid #315064;
+                border-radius: 6px;
+                font-weight: 600;
+            }
+            div[data-testid="stButton"] > button:hover,
+            div[data-testid="stDownloadButton"] > button:hover {
+                border-color: var(--primary);
+                color: var(--primary);
+            }
+            input, textarea, select {
+                background: #0d151c !important;
+                color: var(--text) !important;
+                border-color: var(--line) !important;
+            }
+            [data-testid="stDataFrame"] {
+                border: 1px solid var(--line);
+                border-radius: var(--radius);
+                overflow: hidden;
             }
         </style>
         """,
@@ -267,8 +331,8 @@ def render_hero() -> None:
     st.markdown(
         """
         <div class="hero">
-            <h1>OSINT Dashboard</h1>
-            <p>Система сбора Telegram-профилей, username-enrichment и интеллектуального поиска по смыслу bio.</p>
+            <h1>&gt; OSINT://TELEGRAM-INTEL</h1>
+            <p>local console · Telegram profiles · Sherlock/Snoop/Maigret enrichment · AI/NLP analysis</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -288,11 +352,72 @@ def render_metric_card(label: str, value: str, note: str) -> None:
     )
 
 
+def style_console_figure(fig, height: int = 340, showlegend: bool | None = None):
+    layout_args: dict[str, Any] = {
+        "height": height,
+        "paper_bgcolor": "rgba(0,0,0,0)",
+        "plot_bgcolor": "#0d151c",
+        "font": {"color": "#e7f2f3", "family": "Consolas, Courier New, monospace"},
+        "margin": dict(l=10, r=10, t=10, b=10),
+        "xaxis": {
+            "gridcolor": "#263846",
+            "zerolinecolor": "#263846",
+            "linecolor": "#263846",
+            "tickfont": {"color": "#c4d5da"},
+            "title_font": {"color": "#e7f2f3"},
+        },
+        "yaxis": {
+            "gridcolor": "#263846",
+            "zerolinecolor": "#263846",
+            "linecolor": "#263846",
+            "tickfont": {"color": "#c4d5da"},
+            "title_font": {"color": "#e7f2f3"},
+        },
+        "legend": {"font": {"color": "#c4d5da"}},
+    }
+    if showlegend is not None:
+        layout_args["showlegend"] = showlegend
+    fig.update_layout(**layout_args)
+    return fig
+
+
+def open_profile(user_id: int) -> None:
+    st.session_state["selected_profile_id"] = int(user_id)
+    st.session_state["pending_nav_page"] = "Карточка профиля"
+
+
+def show_enrichment_result(result: dict[str, Any]) -> None:
+    status = result.get("status")
+    message = str(result.get("message") or "Проверка завершена.")
+    if status == "done":
+        st.success(message)
+    elif status == "skipped":
+        st.warning(message)
+    else:
+        st.error(message)
+
+
+def show_enrichment_flash() -> None:
+    flash = st.session_state.pop("enrichment_flash", None)
+    if isinstance(flash, dict):
+        show_enrichment_result(flash)
+
+
+def run_maigret_enrichment(user_id: int, username: str) -> None:
+    with st.spinner("Выполняется Maigret-обогащение..."):
+        result = process_maigret_check(user_id, username)
+        invalidate_views()
+        st.session_state["enrichment_flash"] = result
+
+
 def render_sidebar() -> str:
     with st.sidebar:
         st.markdown("## Навигация")
         if "nav_page" not in st.session_state:
             st.session_state["nav_page"] = "Главная"
+        pending_nav_page = st.session_state.pop("pending_nav_page", None)
+        if pending_nav_page in PAGE_OPTIONS:
+            st.session_state["nav_page"] = pending_nav_page
         selected_page = st.radio(
             "Раздел",
             PAGE_OPTIONS,
@@ -339,8 +464,17 @@ def render_main_page() -> None:
         df = dataframe_from_rows(analytics["top_groups"])
         st.markdown("### Топ Telegram-групп")
         if not df.empty:
-            fig = px.bar(df.head(8), x="count_value", y="group_name", orientation="h", color="count_value", color_continuous_scale="Tealgrn")
-            fig.update_layout(height=340, margin=dict(l=10, r=10, t=10, b=10), coloraxis_showscale=False)
+            fig = px.bar(
+                df.head(8),
+                x="count_value",
+                y="group_name",
+                orientation="h",
+                color="count_value",
+                color_continuous_scale=["#14212b", "#46f0a7"],
+                labels={"count_value": "профили", "group_name": "группа"},
+            )
+            style_console_figure(fig)
+            fig.update_layout(coloraxis_showscale=False)
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Нет данных по группам.")
@@ -348,16 +482,30 @@ def render_main_page() -> None:
         levels = analytics["exposure_levels"]
         df = pd.DataFrame({"Уровень": [format_exposure(k) for k in levels], "Количество": list(levels.values())})
         st.markdown("### Уровни цифрового следа")
-        fig = px.bar(df, x="Уровень", y="Количество", color="Уровень", color_discrete_sequence=["#7bd3b0", "#f2b24a", "#e57d74"])
-        fig.update_layout(height=340, margin=dict(l=10, r=10, t=10, b=10), showlegend=False)
+        fig = px.bar(
+            df,
+            x="Уровень",
+            y="Количество",
+            color="Уровень",
+            color_discrete_sequence=["#46f0a7", "#ffc857", "#ff6b6b"],
+        )
+        style_console_figure(fig, showlegend=False)
         st.plotly_chart(fig, use_container_width=True)
     with chart_cols[2]:
         df = dataframe_from_rows(analytics.get("confidence_levels", []))
         st.markdown("### Достоверность аккаунтов")
         if not df.empty:
             df["label"] = df["label"].map(format_confidence)
-            fig = px.pie(df, names="label", values="count_value", hole=0.55, color="label", color_discrete_sequence=["#1e9f8f", "#f0a23d", "#d87672"])
-            fig.update_layout(height=340, margin=dict(l=10, r=10, t=10, b=10), showlegend=True)
+            fig = px.pie(
+                df,
+                names="label",
+                values="count_value",
+                hole=0.55,
+                color="label",
+                color_discrete_sequence=["#46f0a7", "#ffc857", "#ff6b6b"],
+                labels={"label": "уровень", "count_value": "аккаунты"},
+            )
+            style_console_figure(fig, showlegend=True)
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Сначала выполните Sherlock-проверки.")
@@ -380,8 +528,7 @@ def render_main_page() -> None:
                 )
             with meta_cols[1]:
                 if st.button("Открыть профиль", key=f"home-open-{row['user_id']}"):
-                    st.session_state["selected_profile_id"] = int(row["user_id"])
-                    st.session_state["nav_page"] = "Карточка профиля"
+                    open_profile(int(row["user_id"]))
                     st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
 
@@ -465,6 +612,7 @@ def render_collection_page() -> None:
 
 def render_osint_page() -> None:
     st.markdown("## OSINT-анализ")
+    show_enrichment_flash()
     snapshot = load_osint_snapshot()
     profiles = load_profile_index(limit=5000)
 
@@ -512,10 +660,29 @@ def render_osint_page() -> None:
                 str(uid),
             ),
         )
-        if st.button("Перейти в карточку профиля", key="osint-open-profile"):
-            st.session_state["selected_profile_id"] = int(chosen_user_id)
-            st.session_state["nav_page"] = "Карточка профиля"
+        chosen_profile = next(
+            (row for row in filtered_profiles if int(row["user_id"]) == int(chosen_user_id)),
+            {},
+        )
+        action_cols = st.columns(2)
+        if action_cols[0].button("Перейти в карточку профиля", key="osint-open-profile", use_container_width=True):
+            open_profile(int(chosen_user_id))
             st.rerun()
+        username = str(chosen_profile.get("username") or "").strip()
+        maigret_disabled = not username or not is_maigret_available()
+        if action_cols[1].button(
+            "Обогатить через Maigret",
+            key="osint-maigret-enrich",
+            use_container_width=True,
+            disabled=maigret_disabled,
+            help="Запускает Maigret по username и сохраняет найденные внешние аккаунты в карточку профиля.",
+        ):
+            run_maigret_enrichment(int(chosen_user_id), username)
+            st.rerun()
+        if not username:
+            st.caption("Maigret недоступен для выбранного профиля: нет username.")
+        elif not is_maigret_available():
+            st.caption("Maigret не установлен в текущем окружении.")
 
     table_cols = st.columns(2)
     with table_cols[0]:
@@ -632,8 +799,7 @@ def render_search_page() -> None:
             )
         with upper[1]:
             if st.button("Карточка профиля", key=f"search-open-{result['user_id']}"):
-                st.session_state["selected_profile_id"] = int(result["user_id"])
-                st.session_state["nav_page"] = "Карточка профиля"
+                open_profile(int(result["user_id"]))
                 st.rerun()
         st.write(result.get("bio") or "Bio отсутствует.")
         if result.get("matched_terms"):
@@ -645,6 +811,7 @@ def render_search_page() -> None:
 
 def render_profile_page() -> None:
     st.markdown("## Карточка профиля")
+    show_enrichment_flash()
     profiles = load_profile_index(limit=5000)
     if not profiles:
         st.warning("В базе пока нет профилей.")
@@ -689,18 +856,28 @@ def render_profile_page() -> None:
         st.write(profile.get("bio") or "Bio отсутствует.")
         if profile.get("username"):
             action_cols = st.columns(2)
-            if action_cols[0].button("Запустить Sherlock", key=f"profile-sherlock-{selected_user_id}"):
+            if action_cols[0].button(
+                "Запустить Sherlock",
+                key=f"profile-sherlock-{selected_user_id}",
+                use_container_width=True,
+            ):
                 with st.spinner("Выполняется Sherlock-проверка..."):
                     result = process_username_check(int(selected_user_id), str(profile["username"]))
                     invalidate_views()
-                    st.success(result["message"])
+                    st.session_state["enrichment_flash"] = result
                     st.rerun()
-            if action_cols[1].button("Запустить Maigret", key=f"profile-maigret-{selected_user_id}"):
-                with st.spinner("Выполняется Maigret-проверка..."):
-                    result = process_maigret_check(int(selected_user_id), str(profile["username"]))
-                    invalidate_views()
-                    st.success(result["message"])
-                    st.rerun()
+            maigret_available = is_maigret_available()
+            if action_cols[1].button(
+                "Обогатить через Maigret",
+                key=f"profile-maigret-{selected_user_id}",
+                use_container_width=True,
+                disabled=not maigret_available,
+                help="Глубокая проверка username через Maigret с сохранением результатов в таблицу внешних аккаунтов.",
+            ):
+                run_maigret_enrichment(int(selected_user_id), str(profile["username"]))
+                st.rerun()
+            if not maigret_available:
+                st.caption("Maigret не установлен в текущем окружении, поэтому кнопка обогащения отключена.")
         else:
             st.warning("У этого профиля нет username, поэтому внешние проверки не запускаются.")
 

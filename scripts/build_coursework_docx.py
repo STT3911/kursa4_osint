@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from docx import Document
-from docx.enum.section import WD_SECTION
 from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
@@ -35,11 +34,11 @@ def add_table(document: Document, headers: list[str], rows: list[list[str]]) -> 
     table = document.add_table(rows=1, cols=len(headers))
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.style = "Table Grid"
-    hdr = table.rows[0].cells
     for index, header in enumerate(headers):
-        set_cell_text(hdr[index], header, bold=True)
-        set_cell_shading(hdr[index], "D9EAF7")
-        hdr[index].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+        cell = table.rows[0].cells[index]
+        set_cell_text(cell, header, bold=True)
+        set_cell_shading(cell, "D9EAF7")
+        cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
     for row in rows:
         cells = table.add_row().cells
         for index, value in enumerate(row):
@@ -91,110 +90,112 @@ def build() -> None:
     subtitle = document.add_paragraph()
     subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run = subtitle.add_run(
-        "Разработка локальной OSINT-системы для сбора и анализа открытых данных пользователей Telegram"
+        "Локальная система кибербезопасности и искусственного интеллекта для OSINT-анализа Telegram-профилей"
     )
     run.font.size = Pt(14)
 
     document.add_paragraph()
-    meta_rows = [
-        ("Студент", "____________________________"),
-        ("Группа", "____________________________"),
-        ("Преподаватель", "____________________________"),
-        ("Год", "2026"),
-    ]
-    meta = document.add_table(rows=1, cols=2)
-    meta.alignment = WD_TABLE_ALIGNMENT.CENTER
-    meta.style = "Table Grid"
-    for row_index, (left, right) in enumerate(meta_rows):
-        cells = meta.rows[0].cells if row_index == 0 else meta.add_row().cells
-        set_cell_text(cells[0], left, bold=True)
-        set_cell_text(cells[1], right)
+    add_table(
+        document,
+        ["Поле", "Значение"],
+        [
+            ["Студент", "____________________________"],
+            ["Группа", "____________________________"],
+            ["Преподаватель", "____________________________"],
+            ["Год", "2026"],
+        ],
+    )
 
     document.add_page_break()
 
     document.add_heading("Аннотация", level=1)
     document.add_paragraph(
-        "В работе разработана локальная OSINT-система, которая собирает открытые данные Telegram-профилей, "
-        "сохраняет их в SQLite, обогащает внешними аккаунтами через Sherlock/Snoop/Maigret и выполняет AI/NLP-анализ. "
-        "Система включает desktop-интерфейс, веб-дашборд, экспорт отчетов, семантический поиск, классификацию "
-        "профилей и модель проверки принадлежности найденных аккаунтов тому же человеку."
+        "В работе разработана локальная система, которая объединяет две части: кибербезопасность/OSINT "
+        "и искусственный интеллект/NLP. Первая часть собирает открытые Telegram-данные, хранит их в SQLite "
+        "и обогащает внешними цифровыми следами через Sherlock, Snoop и Maigret. Вторая часть выполняет "
+        "семантический поиск, классификацию профилей и проверку принадлежности найденных аккаунтов тому же человеку."
     )
 
     document.add_heading("Цель и задачи", level=1)
     document.add_paragraph(
-        "Цель работы - создать прикладную систему для локального сбора, хранения, обогащения и анализа "
-        "открытых данных о Telegram-профилях."
+        "Цель работы - создать прикладную систему для локального сбора, хранения, OSINT-обогащения "
+        "и AI/NLP-анализа открытых данных Telegram-профилей."
     )
     add_bullets(
         document,
         [
-            "реализовать сбор открытых профилей Telegram через API;",
-            "организовать локальное хранение данных в SQLite;",
-            "интегрировать Sherlock, опционально Snoop и ручной Maigret для поиска внешних аккаунтов;",
-            "рассчитать OSINT-показатели цифрового следа;",
-            "добавить NLP-поиск, AI-классификацию и identity matching;",
-            "подготовить интерфейс, выгрузки и сценарий демонстрации.",
+            "реализовать сбор открытых Telegram-профилей;",
+            "организовать локальное хранение в SQLite;",
+            "добавить Sherlock/Snoop/Maigret username-enrichment;",
+            "рассчитать OSINT-балл и уровень цифрового следа;",
+            "реализовать семантический и гибридный поиск;",
+            "обучить baseline-классификатор профилей;",
+            "обучить модель identity matching для внешних аккаунтов;",
+            "подготовить интерфейс, демонстрацию и экспорт отчетов.",
         ],
     )
 
-    document.add_heading("Архитектура", level=1)
+    document.add_heading("Разделение разработки", level=1)
     add_table(
         document,
-        ["Слой", "Назначение", "Файлы"],
+        ["Часть", "Назначение", "Файлы"],
         [
-            ["Сбор данных", "Telegram-группы и отдельные профили", "telegram_service.py, parser.py"],
-            ["Хранение", "SQLite-схема, аналитика, CSV/Markdown-отчеты", "database.py, exp_csv.py"],
-            ["OSINT", "Поиск внешних аккаунтов по username", "sherlock_integration.py, snoop_integration.py, maigret_integration.py"],
-            ["AI/NLP", "Поиск, классификация, identity matching", "nlp_search_engine.py, ai_classifier.py, identity_matcher.py"],
+            [
+                "Кибербезопасность и OSINT",
+                "Сбор, хранение, enrichment, оценка цифрового следа",
+                "telegram_service.py, database.py, sherlock_integration.py, snoop_integration.py, maigret_integration.py",
+            ],
+            [
+                "Искусственный интеллект и NLP",
+                "Поиск, классификация, same-person scoring",
+                "nlp_search_engine.py, ai_classifier.py, identity_matcher.py, train_classifier.py",
+            ],
         ],
     )
 
-    document.add_heading("Реализованные функции", level=1)
+    document.add_heading("Часть 1. Кибербезопасность и OSINT", level=1)
+    document.add_paragraph(
+        "OSINT-часть получает открытые поля Telegram-профилей, сохраняет связи пользователь-группа, "
+        "ищет внешние аккаунты по username и формирует оценку цифрового следа."
+    )
     add_bullets(
         document,
         [
-            "сбор открытых Telegram-профилей и realtime-проверка по username, ссылке или user id;",
-            "сохранение профилей, групп, статусов проверок и внешних аккаунтов;",
-            "ручной запуск Maigret для углубленной проверки username;",
+            "сбор Telegram-профилей через Telethon;",
+            "локальное хранение без внешнего сервера;",
+            "очереди Sherlock и Snoop;",
+            "ручная глубокая проверка Maigret;",
+            "сохранение источника найденного аккаунта;",
             "расчет osint_score и exposure_level;",
-            "семантический и гибридный поиск по профилям;",
-            "классификация профилей: backend, frontend, designer, devops, analyst_security, other;",
-            "обучение и отчетность ML-модулей;",
-            "экспорт baseline/enriched CSV, OSINT CSV и Markdown-сводок.",
+            "экспорт CSV и Markdown-отчетов.",
         ],
     )
 
-    document.add_heading("Методика анализа", level=1)
+    document.add_heading("Часть 2. Искусственный интеллект и NLP", level=1)
     document.add_paragraph(
-        "NLP-поиск использует sentence-transformers и fallback на лексический поиск при недоступности модели. "
-        "Гибридное ранжирование объединяет семантическую близость, OSINT-балл и совпадения терминов. "
-        "Identity matching оценивает сходство Telegram-профиля и найденного внешнего аккаунта по username, "
-        "типу сайта, источнику, пересечению bio/URL и риску коллизии."
+        "AI/NLP-часть анализирует собранные данные: ищет профили по смыслу, классифицирует направление "
+        "профиля и оценивает вероятность того, что найденный внешний аккаунт принадлежит тому же человеку."
     )
-    document.add_paragraph("Формула гибридного ранжирования:")
-    document.add_paragraph(
-        "hybrid_score = semantic_score * 0.70 + osint_boost * 0.20 + match_bonus * 0.10"
-    )
-
-    document.add_heading("Результаты", level=1)
-    add_table(
+    add_bullets(
         document,
-        ["Показатель", "Значение"],
         [
-            ["Всего профилей", "4959"],
-            ["Профилей с bio", "1955"],
-            ["Профилей с username", "3812"],
-            ["Профилей с фото", "3195"],
+            "семантический поиск на sentence-transformers;",
+            "гибридное ранжирование с учетом OSINT-балла;",
+            "baseline-классификация профилей;",
+            "модель identity matching на признаках username, URL, источника и риска коллизии;",
+            "отчеты с метриками качества в models/*.json.",
         ],
     )
+
+    document.add_heading("Артефакты", level=1)
     add_table(
         document,
-        ["Метрика identity matching", "Значение"],
+        ["Тип", "Файлы"],
         [
-            ["Accuracy", "0.6264"],
-            ["ROC-AUC", "0.7382"],
-            ["F1 same_person", "0.5390"],
-            ["F1 different_person", "0.6860"],
+            ["Данные", "osint_database.db, nlp_dataset.csv, nlp_dataset_enriched.csv, osint_report.csv"],
+            ["Модели", "models/profile_classifier.joblib, models/identity_matcher.joblib"],
+            ["Отчеты моделей", "models/profile_classifier_report.json, models/identity_matcher_report.json"],
+            ["Документация", "README.md, CYBERSECURITY_PART.md, AI_PART.md, DEMO_GUIDE.md"],
         ],
     )
 
@@ -202,30 +203,29 @@ def build() -> None:
     add_bullets(
         document,
         [
-            "реальные Telegram API-ключи и session-файлы не хранятся в проекте;",
-            "совпадение username не является доказательством личности;",
-            "результаты Sherlock/Snoop/Maigret требуют ручной интерпретации;",
+            "реальные Telegram API-ключи не хранятся в проекте;",
+            "session-файлы не передаются;",
+            "совпадение username не доказывает личность;",
+            "baseline-классификатор требует расширения ручной разметки;",
             "проект предназначен для учебного анализа открытых данных.",
         ],
     )
 
-    document.add_heading("Проверка и демонстрация", level=1)
+    document.add_heading("Проверка", level=1)
     document.add_paragraph(
-        "Для проверки добавлены smoke-тесты ядра анализа: python -m unittest discover -s tests. "
-        "Демонстрационный сценарий описан в DEMO_GUIDE.md. Основной запуск выполняется через app.py, "
-        "дополнительный веб-дашборд - через streamlit run streamlit_app.py."
+        "Минимальная проверка выполняется командой: .\\.venv\\Scripts\\python.exe -m unittest discover -s tests. "
+        "Демонстрация проводится через app.py и streamlit_app.py."
     )
 
     document.add_heading("Вывод", level=1)
     document.add_paragraph(
-        "В результате создана локальная OSINT-система полного цикла: сбор открытых данных, хранение, "
-        "обогащение, аналитика, AI/NLP-поиск, классификация и формирование отчетов. Практическая часть "
-        "готова к демонстрации и защите при наличии локальных зависимостей и, для live-сбора, Telegram-ключей."
+        "Проект доведен до состояния демонстрационной курсовой работы: реализована часть кибербезопасности/OSINT "
+        "и часть искусственного интеллекта/NLP, подготовлены модели, данные, интерфейсы, тесты и документация."
     )
 
     for section in document.sections:
         footer = section.footer.paragraphs[0]
-        footer.text = "OSINT Desktop coursework"
+        footer.text = "OSINT + AI coursework"
         footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     document.save(OUTPUT_PATH)
@@ -233,3 +233,4 @@ def build() -> None:
 
 if __name__ == "__main__":
     build()
+

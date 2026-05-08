@@ -1,47 +1,40 @@
-# Third-Party Notices
-
-This project integrates the following external open-source components:
+# Сторонние компоненты
 
 ## Sherlock
-- Project: `sherlock-project/sherlock`
+
 - Repository: https://github.com/sherlock-project/sherlock
-- Purpose in this project: enrich Telegram usernames with links to external social profiles
-- License: MIT
-
-Upstream MIT notice for Sherlock:
-
-```text
-MIT License
-Copyright (c) 2019 Sherlock Project
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
+- Роль: поиск внешних аккаунтов по username.
+- Часть проекта: кибербезопасность и OSINT.
+- License: MIT.
 
 ## Snoop
-- Project: `snooppr/snoop`
+
 - Repository: https://github.com/snooppr/snoop
-- Purpose in this project: optional username enrichment with additional external profile links
-- Installation model: local clone in `tools/snoop` or path provided through `SNOOP_DIR`
+- Роль: опциональный второй инструмент username-enrichment.
+- Часть проекта: кибербезопасность и OSINT.
+- Модель установки: локальный `tools/snoop` или путь через `SNOOP_DIR`.
 
 ## Maigret
-- Project: `soxoj/maigret`
+
 - Repository: https://github.com/soxoj/maigret
-- Purpose in this project: manual deep username enrichment with CSV/JSON report parsing
-- Installation model: Python package from `requirements.txt`
-- License: see upstream repository for the current license and distribution terms
+- Роль: ручная углубленная проверка username с CSV/JSON-отчетами.
+- Часть проекта: кибербезопасность и OSINT.
+- Модель установки: Python-пакет из `requirements.txt`.
+
+## Sentence Transformers
+
+- Repository: https://github.com/UKPLab/sentence-transformers
+- Роль: embedding-модель для семантического поиска и обучения классификатора.
+- Часть проекта: искусственный интеллект и NLP.
+
+## scikit-learn
+
+- Repository: https://github.com/scikit-learn/scikit-learn
+- Роль: LogisticRegression, метрики качества и обучение моделей.
+- Часть проекта: искусственный интеллект и NLP.
+
+## Streamlit
+
+- Repository: https://github.com/streamlit/streamlit
+- Роль: демонстрационная веб-витрина для защиты.
+

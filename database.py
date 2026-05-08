@@ -192,6 +192,16 @@ def _initialize_schema(path: Path, seed_from_csv: bool) -> None:
             )
             """
         )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS social_account_reviews (
+                account_id INTEGER PRIMARY KEY,
+                review_status TEXT NOT NULL DEFAULT 'pending',
+                review_note TEXT,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
         _migrate_social_accounts_source_unique(conn)
         conn.commit()
         if seed_from_csv:
@@ -269,6 +279,16 @@ def _initialize_memory_schema(seed_from_csv: bool) -> None:
         )
         """
     )
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS social_account_reviews (
+            account_id INTEGER PRIMARY KEY,
+            review_status TEXT NOT NULL DEFAULT 'pending',
+            review_note TEXT,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
     _migrate_social_accounts_source_unique(MEMORY_KEEPALIVE)
     MEMORY_KEEPALIVE.commit()
     if seed_from_csv:
@@ -297,6 +317,19 @@ def init_db() -> None:
             ACTIVE_DB_URI = True
             _initialize_memory_schema(seed_from_csv=True)
     DB_READY = True
+
+
+def _ensure_social_account_reviews_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS social_account_reviews (
+            account_id INTEGER PRIMARY KEY,
+            review_status TEXT NOT NULL DEFAULT 'pending',
+            review_note TEXT,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
 
 
 def get_existing_user_ids() -> set[int]:
@@ -892,6 +925,20 @@ def get_search_dataset() -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def list_profiles_summary(limit: int = 5000) -> list[dict]:
+    init_db()
+    with get_connection() as conn:
+        rows = conn.execute(
+            _summary_query()
+            + """
+            ORDER BY osint_score DESC, site_count DESC, group_count DESC, bio_length DESC, p.user_id
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def list_user_connections() -> list[dict]:
     init_db()
     with get_connection() as conn:
@@ -911,6 +958,7 @@ def get_profile_card(user_id: int) -> dict:
     from identity_matcher import IdentityMatcher
 
     with get_connection() as conn:
+        _ensure_social_account_reviews_table(conn)
         profile_row = conn.execute(
             _summary_query() + " WHERE p.user_id = ?",
             (user_id,),
@@ -930,10 +978,19 @@ def get_profile_card(user_id: int) -> dict:
 
         social_rows = conn.execute(
             """
-            SELECT site_name, profile_url, username, source, checked_at
-            FROM social_accounts
-            WHERE user_id = ?
-            ORDER BY site_name
+            SELECT
+                sa.id,
+                sa.site_name,
+                sa.profile_url,
+                sa.username,
+                sa.source,
+                sa.checked_at,
+                COALESCE(sr.review_status, 'pending') AS review_status,
+                COALESCE(sr.review_note, '') AS review_note
+            FROM social_accounts sa
+            LEFT JOIN social_account_reviews sr ON sr.account_id = sa.id
+            WHERE sa.user_id = ?
+            ORDER BY sa.site_name
             """,
             (user_id,),
         ).fetchall()
@@ -941,11 +998,60 @@ def get_profile_card(user_id: int) -> dict:
     profile = dict(profile_row)
     matcher = IdentityMatcher()
     social_accounts = matcher.match_many(profile, [dict(row) for row in social_rows])
+    for account in social_accounts:
+        percent = int(account.get("same_person_percent") or 0)
+        account["confidence_score"] = percent
+        if percent >= 70:
+            account["confidence_level"] = "probable"
+        elif percent >= 40:
+            account["confidence_level"] = "weak"
+        else:
+            account["confidence_level"] = "unverified"
     return {
         "profile": profile,
         "groups": [dict(row) for row in group_rows],
         "social_accounts": social_accounts,
     }
+
+
+def update_social_account_review(account_id: int, review_status: str, review_note: str = "") -> None:
+    init_db()
+    normalized_status = (review_status or "pending").strip().lower()
+    if normalized_status not in {"pending", "confirmed", "rejected"}:
+        normalized_status = "pending"
+    with get_connection() as conn:
+        _ensure_social_account_reviews_table(conn)
+        conn.execute(
+            """
+            INSERT INTO social_account_reviews (account_id, review_status, review_note, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(account_id) DO UPDATE SET
+                review_status = excluded.review_status,
+                review_note = excluded.review_note,
+                updated_at = excluded.updated_at
+            """,
+            (account_id, normalized_status, review_note or "", utcnow_text()),
+        )
+        conn.commit()
+
+
+def get_latest_sherlock_log(user_id: int) -> dict | None:
+    return None
+
+
+def read_sherlock_log(log_path: str) -> str:
+    path = Path(log_path)
+    try:
+        resolved = path.resolve()
+    except OSError:
+        return ""
+    try:
+        resolved.relative_to(BASE_DIR)
+    except ValueError:
+        return ""
+    if not resolved.exists() or not resolved.is_file():
+        return ""
+    return resolved.read_text(encoding="utf-8", errors="replace")
 
 
 def get_osint_analysis_snapshot() -> dict:
@@ -1250,59 +1356,56 @@ def export_summary_report_markdown(path: Path | None = None) -> Path:
         for row in osint_snapshot["group_stats"][:5]
     ) or "- No groups"
 
-    content = f"""# Summary Report
+    content = f"""# Сводный отчет
 
-## Dataset Overview
+## Обзор данных
 
-- Total profiles: {totals.get('profiles', 0)}
-- Profiles with bio: {totals.get('with_bio', 0)}
-- Profiles with username: {totals.get('with_username', 0)}
-- Profiles with photo: {totals.get('with_photo', 0)}
+- Всего профилей: {totals.get('profiles', 0)}
+- Профилей с bio: {totals.get('with_bio', 0)}
+- Профилей с username: {totals.get('with_username', 0)}
+- Профилей с фото: {totals.get('with_photo', 0)}
 
-## OSINT Part
+## Часть 1. Кибербезопасность и OSINT
 
-The OSINT subsystem collects public Telegram profiles, stores user-to-group links,
-exports datasets, and enriches usernames through Sherlock, optional Snoop, and manual Maigret checks. Each profile receives
-an `osint_score` and an `exposure_level` based on available identifiers, profile
-text, photos, group presence, and external account findings.
+OSINT-часть собирает открытые Telegram-профили, хранит связи пользователь-группа,
+обогащает username через Sherlock/Snoop/Maigret и рассчитывает `osint_score`
+и `exposure_level`.
 
-Top Telegram groups:
+Топ Telegram-групп:
 {top_groups}
 
-OSINT score distribution:
+Распределение OSINT-балла:
 {score_buckets}
 
-Exposure level distribution:
+Распределение уровня цифрового следа:
 {exposure_levels}
 
-Top profiles by OSINT score:
+Топ профилей по OSINT:
 {top_profiles}
 
-Group coverage:
+Покрытие групп:
 {top_group_stats}
 
-## NLP and Analytics Part
+## Часть 2. Искусственный интеллект и NLP
 
-The NLP subsystem searches profiles by semantic similarity over `bio` text and
-uses the enriched dataset for hybrid ranking. The AI subsystem classifies
-profiles into professional directions, supports a trained classifier stored in
-`models/profile_classifier.joblib`, and falls back to explainable keyword rules
-when the trained model is not available. The analytics tab visualizes data
-quality and helps explain whether the dataset is suitable for semantic
-retrieval and classification experiments.
+AI/NLP-часть выполняет семантический и гибридный поиск, классифицирует профили,
+использует `models/profile_classifier.joblib` и оценивает найденные внешние
+аккаунты через `models/identity_matcher.joblib`.
 
-Bio length distribution:
+Распределение длины bio:
 {bio_buckets}
 
-## Demonstration
+## Демонстрация
 
-1. Open the desktop application.
-2. Show the analytics tab and dataset quality charts.
-3. Run a semantic query such as `python backend`.
-4. Open a profile card and explain the relevance score.
-5. Show the OSINT score, exposure level, score breakdown, and Sherlock/Maigret checks.
-6. Open the OSINT analysis tab and show top profiles and group coverage.
-7. Export the enriched dataset, OSINT report, and profile report.
+1. Открыть `app.py` и показать OSINT-карточку профиля.
+2. Показать внешние аккаунты и источники Sherlock/Snoop/Maigret.
+3. Открыть `streamlit_app.py` и выполнить NLP-запрос.
+4. Показать AI-классификацию и same-person score.
+5. Экспортировать CSV/Markdown-отчеты.
 """
     target.write_text(content, encoding="utf-8")
     return target
+
+
+def export_coursework_report_markdown(path: Path | None = None) -> Path:
+    return export_summary_report_markdown(path)

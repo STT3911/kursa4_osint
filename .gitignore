@@ -19,5 +19,10 @@ osint_database_runtime.db-journal
 .smoke_identity/
 .compile_cache/
 .docx_render/
+results/
+profile_reports/
+summary_report.md
+coursework_report_summary.md
+search_results_*.csv
 
 identity_pairs.csv.bak
