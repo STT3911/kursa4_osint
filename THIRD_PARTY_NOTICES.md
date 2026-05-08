@@ -38,4 +38,10 @@ SOFTWARE.
 - Repository: https://github.com/snooppr/snoop
 - Purpose in this project: optional username enrichment with additional external profile links
 - Installation model: local clone in `tools/snoop` or path provided through `SNOOP_DIR`
+
+## Maigret
+- Project: `soxoj/maigret`
+- Repository: https://github.com/soxoj/maigret
+- Purpose in this project: manual deep username enrichment with CSV/JSON report parsing
+- Installation model: Python package from `requirements.txt`
 - License: see upstream repository for the current license and distribution terms

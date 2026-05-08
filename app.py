@@ -14,6 +14,7 @@ from ai_classifier import ProfileClassifier, load_training_report
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from nlp_search_engine import NLPSearchEngine
+from maigret_integration import is_maigret_available, process_maigret_check
 from sherlock_integration import is_sherlock_available, process_username_check
 from snoop_integration import is_snoop_available, process_snoop_check
 from telegram_service import TelegramCollector
@@ -37,6 +38,7 @@ class OSINTApp(tk.Tk):
         self.event_queue: queue.Queue[dict] = queue.Queue()
         self.sherlock_queue: queue.Queue[dict] = queue.Queue()
         self.snoop_queue: queue.Queue[dict] = queue.Queue()
+        self.maigret_queue: queue.Queue[dict] = queue.Queue()
         self.shutdown_event = threading.Event()
         self.search_engine = NLPSearchEngine()
         self.profile_classifier = ProfileClassifier()
@@ -80,6 +82,7 @@ class OSINTApp(tk.Tk):
         self._build_ui()
         self._start_sherlock_worker()
         self._start_snoop_worker()
+        self._start_maigret_worker()
         self._resume_pending_checks()
         self.refresh_dashboard()
         self.after(200, self._drain_event_queue)
@@ -368,12 +371,23 @@ class OSINTApp(tk.Tk):
         ttk.Label(top_frame, textvariable=self.profile_ai_var, wraplength=760, justify="left").grid(
             row=8, column=1, sticky="w", pady=2
         )
-        ttk.Button(top_frame, text="Запустить Sherlock для профиля", command=self.run_sherlock_for_current_profile).grid(
-            row=9, column=1, sticky="w", pady=(8, 0)
-        )
-        ttk.Button(top_frame, text="Запустить Snoop для профиля", command=self.run_snoop_for_current_profile).grid(
-            row=9, column=1, sticky="w", padx=(220, 0), pady=(8, 0)
-        )
+        enrichment_buttons = ttk.Frame(top_frame)
+        enrichment_buttons.grid(row=9, column=1, sticky="w", pady=(8, 0))
+        ttk.Button(
+            enrichment_buttons,
+            text="Запустить Sherlock",
+            command=self.run_sherlock_for_current_profile,
+        ).pack(side="left")
+        ttk.Button(
+            enrichment_buttons,
+            text="Запустить Snoop",
+            command=self.run_snoop_for_current_profile,
+        ).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            enrichment_buttons,
+            text="Запустить Maigret",
+            command=self.run_maigret_for_current_profile,
+        ).pack(side="left", padx=(8, 0))
 
         ttk.Label(self.profile_tab, text="Bio").pack(anchor="w", pady=(16, 4))
         self.bio_box = ScrolledText(self.profile_tab, height=8, wrap="word")
@@ -400,14 +414,25 @@ class OSINTApp(tk.Tk):
     def _build_tools_status() -> str:
         sherlock_state = "available" if is_sherlock_available() else "not installed"
         snoop_state = "available" if is_snoop_available() else "not installed"
-        return f"Sherlock: {sherlock_state} | Snoop: {snoop_state}"
+        maigret_state = "available" if is_maigret_available() else "not installed"
+        return f"Sherlock: {sherlock_state} | Snoop: {snoop_state} | Maigret: {maigret_state}"
 
     def refresh_dashboard(self) -> None:
         stats = database.get_dashboard_stats()
         self.profiles_count_var.set(str(stats["profiles"]))
-        self.queued_count_var.set(f"Sherlock {stats['queued_checks']} | Snoop {stats.get('queued_snoop_checks', 0)}")
+        self.queued_count_var.set(
+            "Sherlock {sherlock} | Snoop {snoop} | Maigret {maigret}".format(
+                sherlock=stats["queued_checks"],
+                snoop=stats.get("queued_snoop_checks", 0),
+                maigret=stats.get("queued_maigret_checks", 0),
+            )
+        )
         self.completed_count_var.set(
-            f"Sherlock {stats['completed_checks']} | Snoop {stats.get('completed_snoop_checks', 0)}"
+            "Sherlock {sherlock} | Snoop {snoop} | Maigret {maigret}".format(
+                sherlock=stats["completed_checks"],
+                snoop=stats.get("completed_snoop_checks", 0),
+                maigret=stats.get("completed_maigret_checks", 0),
+            )
         )
         self.social_count_var.set(str(stats["social_accounts"]))
         self.sherlock_status_var.set(self._build_tools_status())
@@ -600,12 +625,17 @@ class OSINTApp(tk.Tk):
             self.sherlock_queue.put(item)
         for item in database.list_pending_enrichment_checks("snoop", limit=1000):
             self.snoop_queue.put(item)
+        for item in database.list_pending_enrichment_checks("maigret", limit=1000):
+            self.maigret_queue.put(item)
         pending = database.get_dashboard_stats()["queued_checks"]
         if pending:
             self._append_log(f"Возобновлено проверок Sherlock из базы данных: {pending}.")
         pending_snoop = database.get_dashboard_stats().get("queued_snoop_checks", 0)
         if pending_snoop:
             self._append_log(f"Возобновлено проверок Snoop из базы данных: {pending_snoop}.")
+        pending_maigret = database.get_dashboard_stats().get("queued_maigret_checks", 0)
+        if pending_maigret:
+            self._append_log(f"Возобновлено проверок Maigret из базы данных: {pending_maigret}.")
 
     def _start_sherlock_worker(self) -> None:
         worker = threading.Thread(target=self._sherlock_worker_loop, daemon=True)
@@ -616,6 +646,11 @@ class OSINTApp(tk.Tk):
         worker = threading.Thread(target=self._snoop_worker_loop, daemon=True)
         worker.start()
         self.snoop_worker = worker
+
+    def _start_maigret_worker(self) -> None:
+        worker = threading.Thread(target=self._maigret_worker_loop, daemon=True)
+        worker.start()
+        self.maigret_worker = worker
 
     def _sherlock_worker_loop(self) -> None:
         while not self.shutdown_event.is_set():
@@ -657,6 +692,24 @@ class OSINTApp(tk.Tk):
             self.event_queue.put({"type": "log", "message": result["message"]})
             self.event_queue.put({"type": "progress", "stats": database.get_dashboard_stats()})
             self.snoop_queue.task_done()
+
+    def _maigret_worker_loop(self) -> None:
+        while not self.shutdown_event.is_set():
+            try:
+                item = self.maigret_queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            if item is None:
+                break
+
+            user_id = int(item["user_id"])
+            username = str(item["username"])
+            self.event_queue.put({"type": "log", "message": f"Запущен Maigret для @{username}"})
+            result = process_maigret_check(user_id=user_id, username=username)
+            self.search_engine.invalidate()
+            self.event_queue.put({"type": "log", "message": result["message"]})
+            self.event_queue.put({"type": "progress", "stats": database.get_dashboard_stats()})
+            self.maigret_queue.task_done()
 
     def start_collection(self) -> None:
         if self.collection_thread and self.collection_thread.is_alive():
@@ -945,9 +998,12 @@ class OSINTApp(tk.Tk):
         error_text = profile["sherlock_error_text"] or "нет"
         snoop_status = profile.get("snoop_status") or "не выполнялась"
         snoop_error_text = profile.get("snoop_error_text") or "нет"
+        maigret_status = profile.get("maigret_status") or "не выполнялась"
+        maigret_error_text = profile.get("maigret_error_text") or "нет"
         self.profile_status_var.set(
             f"Sherlock: {status}; найдено={profile['sherlock_found_count']}; ошибка={error_text} | "
-            f"Snoop: {snoop_status}; найдено={profile.get('snoop_found_count', 0)}; ошибка={snoop_error_text}"
+            f"Snoop: {snoop_status}; найдено={profile.get('snoop_found_count', 0)}; ошибка={snoop_error_text} | "
+            f"Maigret: {maigret_status}; найдено={profile.get('maigret_found_count', 0)}; ошибка={maigret_error_text}"
         )
         self.profile_sites_var.set(f"Сайты: {profile['site_list'] or 'нет данных'}")
         self.profile_avatar_path_var.set(f"Аватар: {profile['photo_path'] or 'недоступен'}")
@@ -1096,6 +1152,31 @@ class OSINTApp(tk.Tk):
 
         threading.Thread(target=runner, daemon=True).start()
 
+    def run_maigret_for_current_profile(self) -> None:
+        if self.current_profile_id is None:
+            messagebox.showinfo("Профиль не выбран", "Сначала откройте карточку профиля из результатов поиска.")
+            return
+        if not self.current_profile_username:
+            messagebox.showinfo("Нет username", "У выбранного профиля нет username для проверки через Maigret.")
+            return
+
+        user_id = self.current_profile_id
+        username = self.current_profile_username
+        self._append_log(f"Запущена ручная проверка Maigret для @{username}.")
+
+        def runner() -> None:
+            result = process_maigret_check(user_id=user_id, username=username)
+            self.search_engine.invalidate()
+            self.event_queue.put(
+                {
+                    "type": "manual_enrichment_done",
+                    "user_id": user_id,
+                    "message": result["message"],
+                }
+            )
+
+        threading.Thread(target=runner, daemon=True).start()
+
     def _update_avatar(self, photo_path: str) -> None:
         if not photo_path:
             self.avatar_label.configure(image="", text="Аватар недоступен")
@@ -1134,6 +1215,10 @@ class OSINTApp(tk.Tk):
                 if event.get("tool_name") == "snoop":
                     self.snoop_queue.put(
                         {"user_id": event["user_id"], "username": event["username"], "tool_name": "snoop"}
+                    )
+                elif event.get("tool_name") == "maigret":
+                    self.maigret_queue.put(
+                        {"user_id": event["user_id"], "username": event["username"], "tool_name": "maigret"}
                     )
                 self.refresh_dashboard()
             elif event_type == "completed":
@@ -1179,6 +1264,7 @@ class OSINTApp(tk.Tk):
         self.shutdown_event.set()
         self.sherlock_queue.put(None)
         self.snoop_queue.put(None)
+        self.maigret_queue.put(None)
         self.destroy()
 
 

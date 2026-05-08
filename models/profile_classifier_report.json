@@ -1,0 +1,166 @@
+{
+  "model_name": "paraphrase-multilingual-MiniLM-L12-v2",
+  "classifier": "LogisticRegression",
+  "labeling": "weak labels inferred from profile keywords and OSINT features",
+  "rows_total": 46,
+  "classes": [
+    "backend",
+    "devops"
+  ],
+  "class_distribution": {
+    "backend": 43,
+    "devops": 3
+  },
+  "random_state": 42,
+  "accuracy": 1.0,
+  "classification_report": {
+    "backend": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 11.0
+    },
+    "devops": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 1.0
+    },
+    "accuracy": 1.0,
+    "macro avg": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 12.0
+    },
+    "weighted avg": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 12.0
+    }
+  },
+  "confusion_matrix": {
+    "labels": [
+      "backend",
+      "devops"
+    ],
+    "matrix": [
+      [
+        11,
+        0
+      ],
+      [
+        0,
+        1
+      ]
+    ]
+  },
+  "examples": [
+    {
+      "user_id": 244840723,
+      "username": "Rikka_Bot",
+      "label": "backend",
+      "terms": "java",
+      "text": "Rikka Rikka_Bot Multipurpose bot. Use /help for commands list. andrewgiftschat Cyber_sports|DTF|Forum_Airliners|Forum_javaprogramming|Paypal|Planetaexcel|Sports|Telegram|Twitter high"
+    },
+    {
+      "user_id": 384153992,
+      "username": "z4tochk4",
+      "label": "backend",
+      "terms": "java",
+      "text": "번역 없음 z4tochk4 бриллианту прощаются острые грани andrewgiftschat Bandcamp|Forum_Airliners|Forum_javaprogramming|Paypal|Planetaexcel|Radiokot|Telegram high"
+    },
+    {
+      "user_id": 754826357,
+      "username": "kozak85",
+      "label": "backend",
+      "terms": "java",
+      "text": "Roma kozak85 нищие, с 5 минутной отпиской каналы, удалитесь и не позорьтесь, ваш канал и вы🤢 как раз и есть 5минутка, ТОП каналы этим не страдают andrewgiftschat Bandcamp|Forum_Airliners|Forum_javaprogramming|Paypal|Pinterest|Planetaexcel|T"
+    },
+    {
+      "user_id": 988191708,
+      "username": "kisvichka",
+      "label": "backend",
+      "terms": "java",
+      "text": "يمارسون kisvichka угрозы, спам - бан, не отвечаю - значит сплю 🧏🏽‍♀️ andrewgiftschat Bandcamp|Forum_Airliners|Forum_javaprogramming|Paypal|Pinterest|Planetaexcel|Telegram|VC high"
+    },
+    {
+      "user_id": 990256560,
+      "username": "lozew",
+      "label": "backend",
+      "terms": "github, java",
+      "text": "ᴇgᴏrqwwkq lozew Привет! Я использую WhatsApp andrewgiftschat Bandcamp|DeviantART|Duolingo|Forum_Airliners|Forum_javaprogramming|Geocaching|GitHub|Mail_ru_email|Mirtesen|Paypal|Planetaexcel|Snapchat|Sports|Telegram|VK high"
+    },
+    {
+      "user_id": 1110829666,
+      "username": "zahar534",
+      "label": "backend",
+      "terms": "java",
+      "text": "Захар zahar534 Winning is not everything, but the will to win is everything. andrewgiftschat Bandcamp|Duolingo|Forum_Airliners|Forum_javaprogramming|Mail_ru_email|Paypal|Planetaexcel|Radiokot|Snapchat|Telegram|VK high"
+    },
+    {
+      "user_id": 1354297097,
+      "username": "ekaiktag",
+      "label": "backend",
+      "terms": "java",
+      "text": "весенний ekaiktag bio- @bioekaik.Нфт и подарки не дарю,не тратьте мое и ваше время andrewgiftschat Bandcamp|Forum_Airliners|Forum_javaprogramming|Paypal|Planetaexcel|Telegram high"
+    },
+    {
+      "user_id": 1369518939,
+      "username": "woxllx",
+      "label": "backend",
+      "terms": "java",
+      "text": "🎎 woxllx ★8†2★ andrewgiftschat Bandcamp|Forum_Airliners|Forum_javaprogramming|Otzovik|Paypal|Pinterest|Planetaexcel|Telegram|Twitter high"
+    },
+    {
+      "user_id": 1392360789,
+      "username": "xmume",
+      "label": "backend",
+      "terms": "java",
+      "text": "67 xmume -и я могу тебе сказать,о том какой у неё зад Wassup! @sonixwqzz andrewgiftschat Bandcamp|Forum_Airliners|Forum_javaprogramming|Paypal|Planetaexcel|Telegram|Twitter high"
+    },
+    {
+      "user_id": 1417919747,
+      "username": "ggipik",
+      "label": "backend",
+      "terms": "java",
+      "text": "#свтя #мисс ggipik классный прикид, гуччи? andrewgiftschat Bandcamp|DTF|Forum_Airliners|Forum_javaprogramming|Paypal|Pinterest|Planetaexcel|Radiokot|Telegram|Twitter|VC high"
+    },
+    {
+      "user_id": 1431583209,
+      "username": "ilikeyourreeyess",
+      "label": "backend",
+      "terms": "java",
+      "text": "🫦🫦 ilikeyourreeyess Для кого-то ангел, для кого-то сатана andrewgiftschat Bandcamp|Forum_Airliners|Forum_javaprogramming|Paypal|Telegram high"
+    },
+    {
+      "user_id": 1464921460,
+      "username": "A_Artelis",
+      "label": "backend",
+      "terms": "java",
+      "text": "𝐀𝐫𝐭𝐞𝐥𝐢𝐬 A_Artelis Painting – когда душа рисует, а руки лишь следуют andrewgiftschat Bandcamp|Cookpad|Cyber_sports|DTF|Forum_Airliners|Forum_javaprogramming|Paypal|Planetaexcel|Radiokot|Sports|Telegram|Wikiloc high"
+    },
+    {
+      "user_id": 1481347913,
+      "username": "iisuskhristos",
+      "label": "backend",
+      "terms": "github",
+      "text": "Александр iisuskhristos Создатель andrewgiftschat Bandcamp|Forum_Airliners|GitHub|Imgur|Mail_ru_email|Paypal|Periscope|Pinterest|Planetaexcel|Radiokot|Snapchat|SteamGroup|Steamcommunity|Telegram|Tumblr|Twitter|VK high"
+    },
+    {
+      "user_id": 1512964126,
+      "username": "KALASH_RATATATATATA",
+      "label": "backend",
+      "terms": "java",
+      "text": "𝑠ℎ𝑎𝑑𝑜𝑤 KALASH_RATATATATATA Пустота andrewgiftschat Bandcamp|Cyber_sports|Forum_Airliners|Forum_javaprogramming|Paypal|Planetaexcel|Sports|Telegram high"
+    },
+    {
+      "user_id": 1606325388,
+      "username": "solnze203",
+      "label": "backend",
+      "terms": "java",
+      "text": "Sever(⁠⁠㉨⁠⁠) solnze203 что-нибудь о себе... andrewgiftschat Bandcamp|Forum_Airliners|Forum_javaprogramming|Paypal|Pinterest|Planetaexcel|Radiokot|Telegram high"
+    }
+  ]
+}

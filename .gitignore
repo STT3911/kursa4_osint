@@ -1,7 +1,23 @@
-/.venv
+/.venv/
+/.sixth/
 __pycache__/
-avatars/*
+*.py[cod]
 
+.env
+*.session
+*.session-journal
+
+avatars/*
 tools/
+
+*.db-journal
+osint_database_runtime.db
+osint_database_runtime.db-journal
+
 .smoke_test_results/
 .smoke_check/
+.smoke_identity/
+.compile_cache/
+.docx_render/
+
+identity_pairs.csv.bak

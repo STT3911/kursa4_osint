@@ -9,6 +9,7 @@
 - Сохранение профилей, связей с группами и статусов проверок в `SQLite`.
 - Интеграция `Sherlock` для поиска внешних аккаунтов по username.
 - Опциональная интеграция `Snoop` как второго инструмента username-enrichment.
+- Интеграция `Maigret` для ручной углубленной проверки username по большому набору площадок.
 - Расчет `osint_score` и уровня цифрового следа.
 - Семантический и гибридный NLP-поиск по профилям.
 - AI-классификация профилей: `backend`, `frontend`, `designer`, `devops`, `analyst_security`, `other`.
@@ -58,12 +59,22 @@ $env:SNOOP_DIR="D:\path\to\snoop"
 
 Если Snoop не установлен, приложение продолжит работать с Sherlock, Telegram и AI/NLP.
 
+## Maigret
+
+`Maigret` установлен через `requirements.txt` и используется как ручная углубленная проверка выбранного профиля. Такой режим выбран специально: массовый запуск Maigret по всей базе может занимать много времени и создавать лишнюю сетевую нагрузку, а для защиты курсовой достаточно показать проверку на конкретной карточке профиля.
+
 ## Запуск
 
 Графический интерфейс:
 
 ```powershell
 py -3.12 app.py
+```
+
+Веб-дашборд для демонстрации аналитики:
+
+```powershell
+streamlit run streamlit_app.py
 ```
 
 CLI-сценарии:
@@ -94,7 +105,7 @@ py -3.12 train_classifier.py --download-model
 
 ## Identity matching model
 
-Этот AI-модуль оценивает, принадлежит ли найденный Sherlock/Snoop аккаунт тому же человеку, что и Telegram-профиль. Для каждого внешнего аккаунта считается `same-person score`, verdict и объяснение.
+Этот AI-модуль оценивает, принадлежит ли найденный Sherlock/Snoop/Maigret аккаунт тому же человеку, что и Telegram-профиль. Для каждого внешнего аккаунта считается `same-person score`, verdict и объяснение.
 
 Экспорт кандидатов для ручной разметки:
 
@@ -126,25 +137,28 @@ py -3.12 train_identity_matcher.py --labels identity_pairs.csv
 - `identity_matcher.joblib` — модель account matching;
 - `identity_matcher_report.json` — accuracy, precision, recall, F1, ROC-AUC, confusion matrix.
 
-Если обученной модели нет, приложение использует explainable scoring по признакам: сходство username, риск коллизии коротких ников, источник Sherlock/Snoop, тип сайта, пересечение bio и URL.
+Если обученной модели нет, приложение использует explainable scoring по признакам: сходство username, риск коллизии коротких ников, источник Sherlock/Snoop/Maigret, тип сайта, пересечение bio и URL.
 
 ## Демонстрационный сценарий
 
-1. Запустить `app.py`.
+1. Запустить `app.py` или `streamlit run streamlit_app.py`.
 2. Во вкладке сбора проверить, что Telegram API ID/API Hash подтянулись из env, или ввести их вручную.
 3. Собрать группу или выполнить realtime-проверку одного профиля.
 4. Дождаться проверки Sherlock и, если установлен, Snoop по username.
-5. Открыть карточку профиля: посмотреть Telegram-данные, внешние аккаунты, источники `sherlock`/`snoop`, OSINT-балл и AI-классификацию.
-6. Во вкладке NLP-поиска выполнить запросы `python backend`, `figma designer`, `devops`, `osint analyst`.
-7. Сравнить семантический и гибридный режимы.
-8. Экспортировать enriched dataset, OSINT-report и Markdown-сводку.
+5. Открыть карточку профиля и запустить Maigret для ручной углубленной проверки username.
+6. Посмотреть Telegram-данные, внешние аккаунты, источники `sherlock`/`snoop`/`maigret`, OSINT-балл и AI-классификацию.
+7. Во вкладке NLP-поиска выполнить запросы `python backend`, `figma designer`, `devops`, `osint analyst`.
+8. Сравнить семантический и гибридный режимы.
+9. Экспортировать enriched dataset, OSINT-report и Markdown-сводку.
 
 ## Основные файлы
 
 - `app.py` — основной Tkinter-интерфейс.
+- `streamlit_app.py` — веб-дашборд для демонстрации аналитики и профилей.
 - `telegram_service.py` — сбор групп и realtime-проверка отдельных Telegram-профилей.
 - `sherlock_integration.py` — запуск Sherlock и разбор найденных аккаунтов.
 - `snoop_integration.py` — опциональный запуск Snoop и разбор CSV-отчетов.
+- `maigret_integration.py` — запуск Maigret и разбор CSV/JSON-отчетов.
 - `database.py` — SQLite-схема, аналитика, отчеты и CSV-экспорт.
 - `nlp_search_engine.py` — семантический и гибридный поиск.
 - `ai_classifier.py` — AI-классификация профилей и fallback-правила.
@@ -153,10 +167,25 @@ py -3.12 train_identity_matcher.py --labels identity_pairs.csv
 - `train_identity_matcher.py` — экспорт пар для разметки и обучение модели same-person matching.
 - `auto_label_identity_pairs.py` — осторожная weak-разметка и генерация синтетических отрицательных пар.
 - `COURSEWORK_STRUCTURE.md` — разделение работы между участниками.
+- `COURSEWORK_REPORT.md` — итоговый текст отчета по курсовой.
+- `COURSEWORK_REPORT.docx` — оформленная версия отчета для сдачи.
+- `DEMO_GUIDE.md` — сценарий демонстрации проекта на защите.
+- `SUBMISSION_CHECKLIST.md` — чеклист перед отправкой архива.
 - `NLP_IMPROVEMENT_BRIEF.md` — описание AI/NLP-части.
+
+## Проверка
+
+Минимальные smoke-тесты ядра анализа:
+
+```powershell
+$env:PYTHONDONTWRITEBYTECODE="1"
+.\.venv\Scripts\python.exe -m unittest discover -s tests
+```
+
+Перед сдачей не добавляйте в архив `.env`, `*.session`, `.venv/`, `__pycache__/`, `*.db-journal` и runtime-базы.
 
 ## Разделение частей
 
-OSINT-часть отвечает за сбор, хранение и обогащение открытых данных: Telegram, Sherlock, Snoop, цифровой след, отчеты.
+OSINT-часть отвечает за сбор, хранение и обогащение открытых данных: Telegram, Sherlock, Snoop, Maigret, цифровой след, отчеты.
 
 AI/NLP-часть отвечает за анализ собранных данных: семантический поиск, гибридное ранжирование, классификацию, обучение модели, метрики и объяснение результатов.

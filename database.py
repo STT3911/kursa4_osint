@@ -656,6 +656,8 @@ def get_dashboard_stats() -> dict[str, int]:
                 (SELECT COUNT(*) FROM username_checks WHERE status = 'done') AS completed_checks,
                 (SELECT COUNT(*) FROM enrichment_checks WHERE tool_name = 'snoop' AND status = 'pending') AS queued_snoop_checks,
                 (SELECT COUNT(*) FROM enrichment_checks WHERE tool_name = 'snoop' AND status = 'done') AS completed_snoop_checks,
+                (SELECT COUNT(*) FROM enrichment_checks WHERE tool_name = 'maigret' AND status = 'pending') AS queued_maigret_checks,
+                (SELECT COUNT(*) FROM enrichment_checks WHERE tool_name = 'maigret' AND status = 'done') AS completed_maigret_checks,
                 (SELECT COUNT(*) FROM social_accounts) AS social_accounts
             """
         ).fetchone()
@@ -695,6 +697,16 @@ def _summary_query() -> str:
                 checked_at
             FROM enrichment_checks
             WHERE tool_name = 'snoop'
+        ),
+        maigret_data AS (
+            SELECT
+                user_id,
+                status,
+                found_count,
+                error_text,
+                checked_at
+            FROM enrichment_checks
+            WHERE tool_name = 'maigret'
         )
         SELECT
             p.user_id,
@@ -722,6 +734,10 @@ def _summary_query() -> str:
             COALESCE(sn.found_count, 0) AS snoop_found_count,
             COALESCE(sn.error_text, '') AS snoop_error_text,
             COALESCE(sn.checked_at, '') AS snoop_checked_at,
+            COALESCE(mg.status, '') AS maigret_status,
+            COALESCE(mg.found_count, 0) AS maigret_found_count,
+            COALESCE(mg.error_text, '') AS maigret_error_text,
+            COALESCE(mg.checked_at, '') AS maigret_checked_at,
             (
                 CASE WHEN TRIM(COALESCE(p.username, '')) <> '' THEN 15 ELSE 0 END +
                 CASE WHEN TRIM(COALESCE(p.bio, '')) <> '' THEN 20 ELSE 0 END +
@@ -769,6 +785,7 @@ def _summary_query() -> str:
         LEFT JOIN social_data s ON s.user_id = p.user_id
         LEFT JOIN username_checks uc ON uc.user_id = p.user_id
         LEFT JOIN snoop_data sn ON sn.user_id = p.user_id
+        LEFT JOIN maigret_data mg ON mg.user_id = p.user_id
     """
 
 
@@ -1061,6 +1078,8 @@ Groups:
 - Sites: {profile['site_list'] or 'none'}
 - Snoop status: {profile['snoop_status'] or 'not processed'}
 - Snoop accounts found: {profile['snoop_found_count']}
+- Maigret status: {profile['maigret_status'] or 'not processed'}
+- Maigret accounts found: {profile['maigret_found_count']}
 
 Accounts:
 {social_accounts}
@@ -1073,7 +1092,8 @@ Accounts:
 Analytical note:
 The score is based on the amount of open profile information available in the
 local dataset: username, bio, avatar, Telegram group presence, and external
-accounts found through Sherlock and Snoop.
+accounts found through Sherlock, Snoop, and Maigret.
+Maigret can be launched manually as an additional deep username-enrichment check.
 """
     target.write_text(content, encoding="utf-8")
     return target
@@ -1150,6 +1170,10 @@ def export_enriched_csv(path: Path | None = None) -> Path:
             "snoop_found_count",
             "snoop_error_text",
             "snoop_checked_at",
+            "maigret_status",
+            "maigret_found_count",
+            "maigret_error_text",
+            "maigret_checked_at",
             "osint_score",
             "exposure_level",
         ],
@@ -1185,6 +1209,9 @@ def export_osint_report_csv(path: Path | None = None) -> Path:
             "snoop_status",
             "snoop_found_count",
             "snoop_checked_at",
+            "maigret_status",
+            "maigret_found_count",
+            "maigret_checked_at",
             "last_parsed_at",
         ],
         [dict(row) for row in rows],
@@ -1235,7 +1262,7 @@ def export_summary_report_markdown(path: Path | None = None) -> Path:
 ## OSINT Part
 
 The OSINT subsystem collects public Telegram profiles, stores user-to-group links,
-exports datasets, and enriches usernames through Sherlock and optional Snoop. Each profile receives
+exports datasets, and enriches usernames through Sherlock, optional Snoop, and manual Maigret checks. Each profile receives
 an `osint_score` and an `exposure_level` based on available identifiers, profile
 text, photos, group presence, and external account findings.
 
@@ -1273,7 +1300,7 @@ Bio length distribution:
 2. Show the analytics tab and dataset quality charts.
 3. Run a semantic query such as `python backend`.
 4. Open a profile card and explain the relevance score.
-5. Show the OSINT score, exposure level, score breakdown, and Sherlock check.
+5. Show the OSINT score, exposure level, score breakdown, and Sherlock/Maigret checks.
 6. Open the OSINT analysis tab and show top profiles and group coverage.
 7. Export the enriched dataset, OSINT report, and profile report.
 """

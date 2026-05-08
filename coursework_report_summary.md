@@ -1,11 +1,11 @@
-# Summary Report
+# Coursework Report Summary
 
 ## Dataset Overview
 
-- Total profiles: 300
-- Profiles with bio: 159
-- Profiles with username: 287
-- Profiles with photo: 247
+- Total profiles: 4959
+- Profiles with bio: 1955
+- Profiles with username: 3812
+- Profiles with photo: 3195
 
 ## OSINT Part
 
@@ -15,28 +15,36 @@ an `osint_score` and an `exposure_level` based on available identifiers, profile
 text, photos, group presence, and external account findings.
 
 Top Telegram groups:
-- andrewgiftschat: 300
+- andrewgiftschat: 2550
+- rabota_chaty1: 1048
+- laravel_pro: 1000
+- tproger_chat: 221
+- python_ru: 114
 
 OSINT score distribution:
-- 0-24: 7
-- 25-49: 98
-- 50-74: 154
-- 75-100: 41
+- 0-24: 996
+- 25-49: 2088
+- 50-74: 1875
+- 75-100: 0
 
 Exposure level distribution:
-- low: 101
-- medium: 85
-- high: 114
+- low: 3021
+- medium: 1176
+- high: 762
 
 Top profiles by OSINT score:
-- @huuir: score 100, high
-- @kozak85: score 100, high
-- @uzacx: score 95, high
-- @yazykidlyy: score 95, high
-- @pzzdd4x: score 95, high
+- @AniCoder: score 70, high
+- @khudyakv: score 70, high
+- @nomogger: score 70, high
+- @zxccazi: score 70, high
+- @anton_leon_web: score 70, high
 
 Group coverage:
-- andrewgiftschat: users 300, usernames 287, bios 159
+- andrewgiftschat: users 2550, usernames 2366, bios 1396
+- rabota_chaty1: users 1048, usernames 257, bios 120
+- laravel_pro: users 1000, usernames 911, bios 320
+- tproger_chat: users 221, usernames 172, bios 64
+- python_ru: users 114, usernames 81, bios 35
 
 ## NLP and Analytics Part
 
@@ -49,10 +57,10 @@ quality and helps explain whether the dataset is suitable for semantic
 retrieval and classification experiments.
 
 Bio length distribution:
-- 0: 141
-- 1-40: 84
-- 41-120: 71
-- 121+: 4
+- 0: 3004
+- 1-40: 1050
+- 41-120: 861
+- 121+: 44
 
 ## Demonstration
 

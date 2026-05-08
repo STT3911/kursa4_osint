@@ -94,7 +94,7 @@ py -3.12 train_classifier.py --download-model
 ## Identity matching / account verification
 
 Дополнительно реализован модуль проверки найденных аккаунтов: `identity_matcher.py`.
-Он решает задачу User Identity Linkage: Telegram-профиль и найденный Sherlock/Snoop URL сравниваются как пара, после чего система выдает вероятность, что это один и тот же человек.
+Он решает задачу User Identity Linkage: Telegram-профиль и найденный Sherlock/Snoop/Maigret URL сравниваются как пара, после чего система выдает вероятность, что это один и тот же человек.
 
 Признаки модели:
 
