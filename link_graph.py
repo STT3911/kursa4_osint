@@ -18,6 +18,8 @@ import database
 EDGE_GROUP = "group"
 EDGE_SITE = "site"
 EDGE_BOTH = "group+site"
+EDGE_INTERACT = "interact"
+EDGE_GROUP_INTERACT = "group+interact"
 
 TRUST_SITES: set[str] = {
     "github", "gitlab", "linkedin", "stackoverflow",
@@ -47,6 +49,8 @@ EDGE_COLORS = {
     EDGE_GROUP: "#7f8c8d",
     EDGE_SITE: "#c0392b",
     EDGE_BOTH: "#8e44ad",
+    EDGE_INTERACT: "#e67e22",
+    EDGE_GROUP_INTERACT: "#27ae60",
 }
 
 def _looks_like_bot(username: str) -> bool:
@@ -66,6 +70,7 @@ def build_link_graph(
     profiles: list[dict[str, Any]],
     group_rows: list[dict[str, Any]],
     account_rows: list[dict[str, Any]],
+    interaction_rows: list[dict[str, Any]] | None = None,
 ) -> Any:
     """Build an undirected weighted graph from profile data.
 
@@ -93,11 +98,13 @@ def build_link_graph(
             osint_score=int(p.get("osint_score") or 0),
         )
 
+    _INTERNAL_GROUPS = {"direct_lookup", "direct lookup", ""}
     group_members: dict[str, set[int]] = defaultdict(set)
     for row in group_rows:
         uid = int(row["user_id"])
-        if uid in profile_map:
-            group_members[row["group_name"]].add(uid)
+        gname = row.get("group_name", "")
+        if uid in profile_map and gname not in _INTERNAL_GROUPS:
+            group_members[gname].add(uid)
 
     for group_name, members in group_members.items():
         member_list = sorted(members)
@@ -137,6 +144,25 @@ def build_link_graph(
                         d["sites"].append(site)
                         d["weight"] += 2.0
                         d["edge_type"] = EDGE_BOTH
+
+    INTERACT_WEIGHTS = {"forward": 3.0, "reply": 2.0, "mention": 1.5}
+    for row in (interaction_rows or []):
+        u = int(row["from_user_id"])
+        v = int(row["to_user_id"])
+        if u not in profile_map or v not in profile_map or u == v:
+            continue
+        w = INTERACT_WEIGHTS.get(row.get("interaction_type", ""), 1.5)
+        if G.has_edge(u, v):
+            d = G[u][v]
+            d["weight"] += w
+            if d["edge_type"] == EDGE_GROUP:
+                d["edge_type"] = EDGE_GROUP_INTERACT
+        else:
+            G.add_edge(u, v,
+                       groups=[],
+                       sites=[],
+                       weight=w,
+                       edge_type=EDGE_INTERACT)
 
     return G
 
@@ -286,7 +312,7 @@ def draw_link_graph(
     node_sizes = [max(60, min(subG.degree(nd) * 50, 700)) for nd in subG.nodes()]
 
     edge_color_list = [
-        EDGE_COLORS.get(data.get("edge_type", EDGE_GROUP), "#aaaaaa")
+        EDGE_COLORS.get(data.get("edge_type", EDGE_GROUP), EDGE_COLORS[EDGE_GROUP])
         for _, _, data in subG.edges(data=True)
     ]
     edge_widths = [
@@ -312,8 +338,8 @@ def draw_link_graph(
 
     ax.set_title(
         f"Граф связей: {subG.number_of_nodes()} профилей, {subG.number_of_edges()} связей\n"
-        "Узел:  красный=high   оранжевый=medium   синий=analyst   зелёный=low\n"
-        "Ребро: ― серый=общая группа  ― красный=общий сайт  ― фиолетовый=оба",
+        "Узел:  красный=high  оранжевый=medium  синий=analyst  зелёный=low\n"
+        "Ребро: серый=группа  красный=сайт  фиолетовый=оба  оранжевый=взаимодействие  зелёный=группа+взаим.",
         fontsize=8,
     )
     ax.set_axis_off()
@@ -348,10 +374,11 @@ def draw_interactive_graph(
         "unknown": "#95a5a6",
     }
     EDGE_COLOR_MAP = {
-        EDGE_GROUP: "#7f8c8d",
-        EDGE_SITE:  "#c0392b",
-        EDGE_BOTH:  "#8e44ad",
-        "forward":  "#e67e22",
+        EDGE_GROUP:          "#7f8c8d",
+        EDGE_SITE:           "#c0392b",
+        EDGE_BOTH:           "#8e44ad",
+        EDGE_INTERACT:       "#e67e22",
+        EDGE_GROUP_INTERACT: "#27ae60",
     }
 
     net = Network(
@@ -386,21 +413,29 @@ def draw_interactive_graph(
             borderWidthSelected=4,
         )
 
+    ETYPE_LABELS = {
+        EDGE_GROUP:          "Общая группа",
+        EDGE_SITE:           "Общий сайт",
+        EDGE_BOTH:           "Группа + сайт",
+        EDGE_INTERACT:       "Взаимодействие (forward/reply)",
+        EDGE_GROUP_INTERACT: "Группа + взаимодействие",
+    }
     for u, v, data in subG.edges(data=True):
         etype = data.get("edge_type", EDGE_GROUP)
         weight = data.get("weight", 1.0)
         groups = ", ".join(data.get("groups", [])[:3])
         sites = ", ".join(data.get("sites", [])[:3])
-        title_parts = []
+        title_parts = [ETYPE_LABELS.get(etype, etype)]
         if groups:
-            title_parts.append(f"Groups: {groups}")
+            title_parts.append(f"Группы: {groups}")
         if sites:
-            title_parts.append(f"Sites: {sites}")
+            title_parts.append(f"Сайты: {sites}")
+        title_parts.append(f"Вес: {weight:.1f}")
         net.add_edge(
             u, v,
-            color=EDGE_COLOR_MAP.get(etype, "#aaaaaa"),
+            color=EDGE_COLOR_MAP.get(etype, EDGE_COLOR_MAP[EDGE_GROUP]),
             width=min(weight * 0.4, 4.0),
-            title="<br>".join(title_parts) or etype,
+            title="<br>".join(title_parts),
         )
 
     net.set_options("""
@@ -424,6 +459,36 @@ def draw_interactive_graph(
     """)
 
     net.save_graph(output_path)
+
+    legend_html = """
+<div style="
+    position:fixed; bottom:16px; right:16px;
+    background:rgba(26,26,46,0.92); border:1px solid #444;
+    padding:10px 14px; border-radius:8px;
+    font-family:monospace; font-size:12px; color:#ecf0f1;
+    z-index:9999; line-height:1.8;
+">
+  <b>Легенда рёбер</b><br>
+  <span style="color:#7f8c8d">&#9644;</span> Общая группа<br>
+  <span style="color:#c0392b">&#9644;</span> Общий сайт<br>
+  <span style="color:#8e44ad">&#9644;</span> Группа + сайт<br>
+  <span style="color:#e67e22">&#9644;</span> Взаимодействие<br>
+  <span style="color:#27ae60">&#9644;</span> Группа + взаимодействие<br>
+  <hr style="border-color:#555; margin:4px 0">
+  <b>Легенда узлов</b><br>
+  <span style="color:#e74c3c">&#9679;</span> Высокий риск<br>
+  <span style="color:#f39c12">&#9679;</span> Средний риск<br>
+  <span style="color:#3498db">&#9679;</span> Аналитик<br>
+  <span style="color:#2ecc71">&#9679;</span> Низкий риск<br>
+  <span style="color:#95a5a6">&#9679;</span> Неизвестно
+</div>
+"""
+
+    html_path = Path(output_path)
+    original = html_path.read_text(encoding="utf-8")
+    patched = original.replace("</body>", legend_html + "\n</body>", 1)
+    html_path.write_text(patched, encoding="utf-8")
+
     return output_path
 
 
@@ -460,6 +525,12 @@ def get_link_analysis() -> dict[str, Any]:
         account_rows = [dict(r) for r in conn.execute(
             "SELECT user_id, site_name, profile_url FROM social_accounts"
         ).fetchall()]
+        try:
+            interaction_rows = [dict(r) for r in conn.execute(
+                "SELECT from_user_id, to_user_id, interaction_type FROM message_interactions"
+            ).fetchall()]
+        except Exception:
+            interaction_rows = []
 
     if not profiles:
         return {
@@ -470,7 +541,7 @@ def get_link_analysis() -> dict[str, Any]:
             "bot_networks": [],
         }
 
-    G = build_link_graph(profiles, group_rows, account_rows)
+    G = build_link_graph(profiles, group_rows, account_rows, interaction_rows)
     metrics = compute_graph_metrics(G)
     bot_networks = detect_bot_networks(G, metrics)
 

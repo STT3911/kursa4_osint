@@ -58,6 +58,43 @@ def _e(value: Any) -> str:
     """Экранирует строку для HTML-режима Telegram."""
     return html.escape(str(value or ""))
 
+
+def _estimate_reg_date(user_id: int) -> str:
+    """Оценивает месяц регистрации по Telegram user_id."""
+    from datetime import date
+    CHECKPOINTS = [
+        (100_000_000,  date(2014, 6, 1)),
+        (500_000_000,  date(2019, 1, 1)),
+        (1_000_000_000, date(2020, 2, 1)),
+        (1_500_000_000, date(2020, 10, 1)),
+        (2_000_000_000, date(2021, 5, 1)),
+        (2_500_000_000, date(2021, 11, 1)),
+        (3_000_000_000, date(2022, 2, 1)),
+        (4_000_000_000, date(2022, 5, 1)),
+        (5_000_000_000, date(2022, 7, 1)),
+        (6_000_000_000, date(2022, 12, 1)),
+        (7_000_000_000, date(2023, 7, 1)),
+        (7_700_000_000, date(2024, 1, 1)),
+        (8_500_000_000, date(2024, 6, 1)),
+        (9_000_000_000, date(2024, 10, 1)),
+    ]
+    if user_id <= 0:
+        return "неизвестно"
+    for i in range(len(CHECKPOINTS) - 1):
+        lo_id, lo_date = CHECKPOINTS[i]
+        hi_id, hi_date = CHECKPOINTS[i + 1]
+        if lo_id <= user_id < hi_id:
+            frac = (user_id - lo_id) / (hi_id - lo_id)
+            lo_days = (lo_date - date(2013, 1, 1)).days
+            hi_days = (hi_date - date(2013, 1, 1)).days
+            est_days = int(lo_days + frac * (hi_days - lo_days))
+            from datetime import timedelta
+            est = date(2013, 1, 1) + timedelta(days=est_days)
+            return f"{est.month}.{est.year}"
+    if user_id < CHECKPOINTS[0][0]:
+        return "до 2014"
+    return f">= {CHECKPOINTS[-1][1].year}"
+
 _GRAPH_CACHE: dict[str, Any] = {}
 _GRAPH_CACHE_TS: float = 0.0
 _GRAPH_TTL = 60.0
@@ -86,16 +123,131 @@ async def _reply_long(message: Any, text: str, **kwargs: Any) -> None:
         await message.reply_text("\n".join(part), **kwargs)
 
 async def _fetch_profile_live(username: str) -> str | None:
-    """Забирает профиль из Telegram и сохраняет в БД.
-    Возвращает сообщение о статусе или None при ошибке.
+    """Забирает профиль из Telegram, находит общие группы, собирает участников и взаимодействия.
+    Возвращает сообщение о статусе или None при успехе.
     """
     session_file = Path("osint_session.session")
     if not session_file.exists():
         return "сессия Telethon не найдена — авторизуйся через десктопное приложение"
     try:
-        from telegram_service import TelegramCollector
-        collector = TelegramCollector(api_id="", api_hash="")
-        await collector.collect_profile(username)
+        from config import env_first, load_env_file
+        load_env_file()
+        api_id = env_first("TELEGRAM_API_ID", "TG_API_ID")
+        api_hash = env_first("TELEGRAM_API_HASH", "TG_API_HASH")
+        if not api_id or not api_hash:
+            return "TELEGRAM_API_ID / TELEGRAM_API_HASH не заданы в .env"
+
+        try:
+            from telethon import TelegramClient
+            from telethon.errors import FloodWaitError, ChatAdminRequiredError
+            from telethon.tl.functions.messages import GetCommonChatsRequest
+            from telethon.tl.types import PeerUser
+        except ImportError:
+            return "telethon не установлен"
+
+        client = TelegramClient("osint_session", int(api_id), api_hash)
+        await client.start()
+        try:
+            user = await client.get_entity(username)
+            uid = user.id
+
+            database.save_profile(
+                user_id=uid,
+                first_name=getattr(user, "first_name", "") or "",
+                username=getattr(user, "username", "") or "",
+                bio=getattr(user, "about", "") or "",
+                photo_path="",
+            )
+
+            try:
+                result = await client(GetCommonChatsRequest(user_id=user, max_id=0, limit=100))
+                common_chats = result.chats
+            except Exception as e:
+                log.warning("GetCommonChatsRequest failed: %s", e)
+                common_chats = []
+
+            log.info("@%s: найдено %d общих групп", username, len(common_chats))
+
+            if not common_chats:
+                log.info("@%s: общих групп нет — сканирую собственные диалоги сессии", username)
+                try:
+                    from telethon.tl.types import Channel, Chat as TLChat
+                    from telethon.errors import UserNotParticipantError
+                    async for dialog in client.iter_dialogs(limit=50):
+                        entity = dialog.entity
+                        if not isinstance(entity, (Channel, TLChat)):
+                            continue
+                        try:
+                            perms = await client.get_permissions(entity, user)
+                            if perms is not None:
+                                common_chats.append(entity)
+                                log.info("Нашёл @%s в группе %s", username, dialog.name)
+                        except UserNotParticipantError:
+                            pass
+                        except Exception:
+                            pass
+                    log.info("@%s: после сканирования диалогов — %d групп", username, len(common_chats))
+                except Exception as e:
+                    log.warning("Сканирование диалогов не удалось: %s", e)
+
+            for chat in common_chats[:10]:
+                chat_title = getattr(chat, "title", None) or str(chat.id)
+                chat_uname = getattr(chat, "username", None)
+                group_label = f"@{chat_uname}" if chat_uname else chat_title
+
+                try:
+                    async for member in client.iter_participants(chat, limit=500):
+                        if getattr(member, "bot", False):
+                            continue
+                        database.save_profile(
+                            user_id=member.id,
+                            first_name=getattr(member, "first_name", "") or "",
+                            username=getattr(member, "username", "") or "",
+                            bio="",
+                            photo_path="",
+                        )
+                        database.link_user_group(member.id, group_label)
+                    log.info("Собрана группа %s", group_label)
+                except FloodWaitError as e:
+                    await asyncio.sleep(min(e.seconds, 30))
+                except ChatAdminRequiredError:
+                    log.warning("Нет прав участников в %s", group_label)
+                except Exception as e:
+                    log.warning("Не удалось собрать %s: %s", group_label, e)
+
+                try:
+                    async for msg in client.iter_messages(chat, from_user=user, limit=100):
+                        if msg.fwd_from:
+                            fwd_peer = getattr(msg.fwd_from, "from_id", None)
+                            if isinstance(fwd_peer, PeerUser) and fwd_peer.user_id != uid:
+                                database.save_interaction(
+                                    from_user_id=uid,
+                                    to_user_id=fwd_peer.user_id,
+                                    interaction_type="forward",
+                                    group_id=chat.id,
+                                    group_name=group_label,
+                                )
+                        if msg.reply_to and msg.reply_to.reply_to_msg_id:
+                            try:
+                                orig = await client.get_messages(
+                                    chat, ids=msg.reply_to.reply_to_msg_id
+                                )
+                                if orig and orig.sender_id and orig.sender_id != uid:
+                                    database.save_interaction(
+                                        from_user_id=uid,
+                                        to_user_id=orig.sender_id,
+                                        interaction_type="reply",
+                                        group_id=chat.id,
+                                        group_name=group_label,
+                                    )
+                            except Exception:
+                                pass
+                except Exception as e:
+                    log.warning("Не удалось просканировать сообщения %s: %s", group_label, e)
+
+        finally:
+            await client.disconnect()
+
         _invalidate_graph_cache()
         return None
     except Exception as exc:
@@ -119,8 +271,14 @@ def _load_graph_data() -> dict[str, Any]:
         account_rows = [dict(r) for r in conn.execute(
             "SELECT user_id, site_name, profile_url FROM social_accounts"
         ).fetchall()]
+        try:
+            interaction_rows = [dict(r) for r in conn.execute(
+                "SELECT from_user_id, to_user_id, interaction_type FROM message_interactions"
+            ).fetchall()]
+        except Exception:
+            interaction_rows = []
 
-    G = build_link_graph(profiles, group_rows, account_rows)
+    G = build_link_graph(profiles, group_rows, account_rows, interaction_rows)
     metrics = compute_graph_metrics(G)
     bot_networks = detect_bot_networks(G, metrics)
     profile_map = {int(p["user_id"]): p for p in profiles}
@@ -234,36 +392,55 @@ async def cmd_whois(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(f"Профиль @{_e(username)} не найден в Telegram.")
         return
 
-    node = G.nodes[node_id]
     p = profiles.get(node_id, {})
+    uname = _e(p.get("username") or username)
+    reg_date = _estimate_reg_date(node_id)
+    name_history = database.get_profile_names(node_id)
     neighbors = list(G.neighbors(node_id))
 
+    with database.get_connection() as conn:
+        _INTERNAL = {"direct_lookup", "direct lookup", ""}
+        group_names = [
+            r[0] for r in conn.execute(
+                "SELECT group_name FROM user_groups WHERE user_id = ? ORDER BY parsed_at",
+                (node_id,),
+            ).fetchall()
+            if r[0] not in _INTERNAL
+        ]
+
     lines = [
-        f" <b>@{_e(username)}</b>",
-        f"Имя: {_e(p.get('first_name') or '—')}",
-        f"OSINT-балл: {node.get('osint_score', 0)}",
-        f"Бот-паттерн: {'да ' if node.get('is_bot') else 'нет'}",
-        f"Прямых связей: {len(neighbors)}",
+        f"👤 <b>{node_id}</b> | @{uname}",
+        f"📅 Месяц регистрации: {reg_date}",
         "",
     ]
 
+    if name_history:
+        lines.append("📝 <b>История имён:</b>")
+        for i, name in enumerate(name_history, 1):
+            lines.append(f"{i}. {_e(name)}")
+        lines.append("")
+
     if neighbors:
-        lines.append("<b>Связанные профили:</b>")
-        for nb in neighbors[:15]:
-            edge = G[node_id][nb]
-            edge_type = edge.get("edge_type", "group")
-            weight = edge.get("weight", 1)
-            groups = ", ".join(_e(g) for g in edge.get("groups", [])[:2])
-            sites = ", ".join(_e(s) for s in edge.get("sites", [])[:2])
-            via = f"группы: {groups}" if groups else ""
-            via += ("; " if via and sites else "") + (f"сайты: {sites}" if sites else "")
-            icon = "" if "site" in edge_type else ""
-            lines.append(
-                f"  {icon} {_profile_line(G, nb, profiles)}"
-                f"  [{via or _e(edge_type)}, w={weight:.0f}]"
-            )
-        if len(neighbors) > 15:
-            lines.append(f"  ... и ещё {len(neighbors) - 15}")
+        shown = neighbors[:20]
+        lines.append(f"👥 <b>Знакомые ({len(shown)} из {len(neighbors)}):</b>")
+        for nb in shown:
+            nb_p = profiles.get(nb, {})
+            nb_name = _e((nb_p.get("first_name") or "").strip() or str(nb))
+            nb_uname = (nb_p.get("username") or "").strip()
+            if nb_uname:
+                lines.append(f"- {nb_name} (https://t.me/{_e(nb_uname)}) [{nb}]")
+            else:
+                lines.append(f"- {nb_name} [{nb}]")
+        lines.append("")
+
+    lines.append(f"👥 Количество групп: {len(group_names)}")
+
+    if group_names:
+        lines.append("")
+        lines.append("Группы:")
+        for gname in group_names:
+            clean = gname.lstrip("@")
+            lines.append(f"- {_e(clean)} {'@' + _e(clean) if not gname.startswith('@') else ''}")
 
     await _reply_long(update.message, "\n".join(lines), parse_mode="HTML")
 
@@ -412,6 +589,67 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         context.args = [text.lstrip("@")]
         await cmd_whois(update, context)
 
+
+async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Тихо собирает связи из сообщений групп: forwards, replies, mentions."""
+    msg = update.message
+    if not msg or not msg.from_user:
+        return
+
+    sender = msg.from_user
+    chat = msg.chat
+    group_id = chat.id
+    group_name = chat.username or chat.title or str(group_id)
+
+    database.save_profile(
+        user_id=sender.id,
+        first_name=sender.first_name or "",
+        username=sender.username or "",
+        bio="",
+        photo_path="",
+    )
+    database.link_user_group(sender.id, group_name)
+    _invalidate_graph_cache()
+
+    if msg.forward_origin:
+        try:
+            fwd_user = getattr(msg.forward_origin, "sender_user", None)
+            if fwd_user and fwd_user.id != sender.id:
+                database.save_profile(
+                    user_id=fwd_user.id,
+                    first_name=fwd_user.first_name or "",
+                    username=fwd_user.username or "",
+                    bio="",
+                    photo_path="",
+                )
+                database.save_interaction(
+                    from_user_id=sender.id,
+                    to_user_id=fwd_user.id,
+                    interaction_type="forward",
+                    group_id=group_id,
+                    group_name=group_name,
+                )
+        except Exception:
+            pass
+
+    if msg.reply_to_message and msg.reply_to_message.from_user:
+        target = msg.reply_to_message.from_user
+        if target.id != sender.id:
+            database.save_profile(
+                user_id=target.id,
+                first_name=target.first_name or "",
+                username=target.username or "",
+                bio="",
+                photo_path="",
+            )
+            database.save_interaction(
+                from_user_id=sender.id,
+                to_user_id=target.id,
+                interaction_type="reply",
+                group_id=group_id,
+                group_name=group_name,
+            )
+
 def build_app(token: str) -> "Application":
     app = Application.builder().token(token).build()
     app.add_handler(CommandHandler("start", cmd_start))
@@ -422,7 +660,8 @@ def build_app(token: str) -> "Application":
     app.add_handler(CommandHandler("cluster", cmd_cluster))
     app.add_handler(CommandHandler("bots", cmd_bots))
     app.add_handler(CommandHandler("graph", cmd_graph))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, handle_text))
+    app.add_handler(MessageHandler(filters.ALL & filters.ChatType.GROUPS, handle_group_message))
     return app
 
 def main() -> None:

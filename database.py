@@ -187,6 +187,31 @@ def _initialize_schema(path: Path, seed_from_csv: bool) -> None:
             )
             """
         )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS profile_names (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                recorded_at TEXT DEFAULT (datetime('now')),
+                UNIQUE(user_id, name)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS message_interactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                from_user_id INTEGER NOT NULL,
+                to_user_id INTEGER NOT NULL,
+                interaction_type TEXT NOT NULL,
+                group_id INTEGER,
+                group_name TEXT,
+                recorded_at TEXT DEFAULT (datetime('now')),
+                UNIQUE(from_user_id, to_user_id, interaction_type, group_id)
+            )
+            """
+        )
         _migrate_social_accounts_source_unique(conn)
         conn.commit()
         if seed_from_csv:
@@ -333,7 +358,53 @@ def save_profile(
             """,
             (user_id, first_name or "", username or "", bio or "", photo_path or ""),
         )
+        if first_name and first_name.strip():
+            conn.execute(
+                "INSERT OR IGNORE INTO profile_names (user_id, name) VALUES (?, ?)",
+                (user_id, first_name.strip()),
+            )
         conn.commit()
+
+def save_interaction(
+    from_user_id: int,
+    to_user_id: int,
+    interaction_type: str,
+    group_id: int | None = None,
+    group_name: str | None = None,
+) -> None:
+    init_db()
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO message_interactions
+                (from_user_id, to_user_id, interaction_type, group_id, group_name)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (from_user_id, to_user_id, interaction_type, group_id, group_name),
+        )
+        conn.commit()
+
+def get_interactions(user_id: int) -> list[dict]:
+    init_db()
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT from_user_id, to_user_id, interaction_type, group_name
+            FROM message_interactions
+            WHERE from_user_id = ? OR to_user_id = ?
+            """,
+            (user_id, user_id),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+def get_profile_names(user_id: int) -> list[str]:
+    init_db()
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT name FROM profile_names WHERE user_id = ? ORDER BY recorded_at",
+            (user_id,),
+        ).fetchall()
+    return [r[0] for r in rows]
 
 def link_user_group(user_id: int, group_name: str, parsed_at: str | None = None) -> None:
     init_db()
