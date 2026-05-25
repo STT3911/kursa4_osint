@@ -23,16 +23,13 @@ DB_READY = False
 MEMORY_DB_URI = "file:osint_runtime?mode=memory&cache=shared"
 MEMORY_KEEPALIVE: sqlite3.Connection | None = None
 
-
 def utcnow_text() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
 
 def get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(ACTIVE_DB_PATH, timeout=30, uri=ACTIVE_DB_URI)
     conn.row_factory = sqlite3.Row
     return conn
-
 
 def _seed_from_baseline_csv(conn: sqlite3.Connection) -> None:
     if not BASELINE_DATASET_PATH.exists():
@@ -78,7 +75,6 @@ def _seed_from_baseline_csv(conn: sqlite3.Connection) -> None:
                 )
     conn.commit()
 
-
 def _migrate_social_accounts_source_unique(conn: sqlite3.Connection) -> None:
     row = conn.execute(
         """
@@ -122,7 +118,6 @@ def _migrate_social_accounts_source_unique(conn: sqlite3.Connection) -> None:
         """
     )
     conn.execute("DROP TABLE social_accounts_old")
-
 
 def _initialize_schema(path: Path, seed_from_csv: bool) -> None:
     conn = sqlite3.connect(path, timeout=30)
@@ -194,11 +189,26 @@ def _initialize_schema(path: Path, seed_from_csv: bool) -> None:
         )
         cursor.execute(
             """
-            CREATE TABLE IF NOT EXISTS social_account_reviews (
-                account_id INTEGER PRIMARY KEY,
-                review_status TEXT NOT NULL DEFAULT 'pending',
-                review_note TEXT,
-                updated_at TEXT NOT NULL
+            CREATE TABLE IF NOT EXISTS profile_names (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                recorded_at TEXT DEFAULT (datetime('now')),
+                UNIQUE(user_id, name)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS message_interactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                from_user_id INTEGER NOT NULL,
+                to_user_id INTEGER NOT NULL,
+                interaction_type TEXT NOT NULL,
+                group_id INTEGER,
+                group_name TEXT,
+                recorded_at TEXT DEFAULT (datetime('now')),
+                UNIQUE(from_user_id, to_user_id, interaction_type, group_id)
             )
             """
         )
@@ -208,7 +218,6 @@ def _initialize_schema(path: Path, seed_from_csv: bool) -> None:
             _seed_from_baseline_csv(conn)
     finally:
         conn.close()
-
 
 def _initialize_memory_schema(seed_from_csv: bool) -> None:
     global MEMORY_KEEPALIVE
@@ -294,7 +303,6 @@ def _initialize_memory_schema(seed_from_csv: bool) -> None:
     if seed_from_csv:
         _seed_from_baseline_csv(MEMORY_KEEPALIVE)
 
-
 def init_db() -> None:
     global ACTIVE_DB_PATH, ACTIVE_DB_URI, DB_READY
 
@@ -319,24 +327,11 @@ def init_db() -> None:
     DB_READY = True
 
 
-def _ensure_social_account_reviews_table(conn: sqlite3.Connection) -> None:
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS social_account_reviews (
-            account_id INTEGER PRIMARY KEY,
-            review_status TEXT NOT NULL DEFAULT 'pending',
-            review_note TEXT,
-            updated_at TEXT NOT NULL
-        )
-        """
-    )
-
 
 def get_existing_user_ids() -> set[int]:
     init_db()
     with get_connection() as conn:
         return {row["user_id"] for row in conn.execute("SELECT user_id FROM profiles")}
-
 
 def save_profile(
     user_id: int,
@@ -375,8 +370,53 @@ def save_profile(
             """,
             (user_id, first_name or "", username or "", bio or "", photo_path or ""),
         )
+        if first_name and first_name.strip():
+            conn.execute(
+                "INSERT OR IGNORE INTO profile_names (user_id, name) VALUES (?, ?)",
+                (user_id, first_name.strip()),
+            )
         conn.commit()
 
+def save_interaction(
+    from_user_id: int,
+    to_user_id: int,
+    interaction_type: str,
+    group_id: int | None = None,
+    group_name: str | None = None,
+) -> None:
+    init_db()
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO message_interactions
+                (from_user_id, to_user_id, interaction_type, group_id, group_name)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (from_user_id, to_user_id, interaction_type, group_id, group_name),
+        )
+        conn.commit()
+
+def get_interactions(user_id: int) -> list[dict]:
+    init_db()
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT from_user_id, to_user_id, interaction_type, group_name
+            FROM message_interactions
+            WHERE from_user_id = ? OR to_user_id = ?
+            """,
+            (user_id, user_id),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+def get_profile_names(user_id: int) -> list[str]:
+    init_db()
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT name FROM profile_names WHERE user_id = ? ORDER BY recorded_at",
+            (user_id,),
+        ).fetchall()
+    return [r[0] for r in rows]
 
 def link_user_group(user_id: int, group_name: str, parsed_at: str | None = None) -> None:
     init_db()
@@ -389,7 +429,6 @@ def link_user_group(user_id: int, group_name: str, parsed_at: str | None = None)
             (user_id, group_name, parsed_at or utcnow_text()),
         )
         conn.commit()
-
 
 def queue_username_check_if_needed(user_id: int, username: str) -> bool:
     init_db()
@@ -432,7 +471,6 @@ def queue_username_check_if_needed(user_id: int, username: str) -> bool:
         conn.commit()
         return True
 
-
 def mark_username_skipped(user_id: int, username: str | None) -> None:
     init_db()
     with get_connection() as conn:
@@ -450,7 +488,6 @@ def mark_username_skipped(user_id: int, username: str | None) -> None:
             (user_id, username or "", utcnow_text()),
         )
         conn.commit()
-
 
 def mark_username_done(user_id: int, username: str, found_count: int) -> None:
     init_db()
@@ -470,7 +507,6 @@ def mark_username_done(user_id: int, username: str, found_count: int) -> None:
         )
         conn.commit()
 
-
 def mark_username_error(user_id: int, username: str, error_text: str) -> None:
     init_db()
     with get_connection() as conn:
@@ -488,7 +524,6 @@ def mark_username_error(user_id: int, username: str, error_text: str) -> None:
             (user_id, username, utcnow_text(), error_text[:1000]),
         )
         conn.commit()
-
 
 def queue_enrichment_check_if_needed(user_id: int, username: str, tool_name: str) -> bool:
     init_db()
@@ -533,7 +568,6 @@ def queue_enrichment_check_if_needed(user_id: int, username: str, tool_name: str
         conn.commit()
         return True
 
-
 def mark_enrichment_skipped(user_id: int, username: str | None, tool_name: str) -> None:
     init_db()
     tool_name = (tool_name or "").strip().lower()
@@ -553,7 +587,6 @@ def mark_enrichment_skipped(user_id: int, username: str | None, tool_name: str) 
             (user_id, username or "", tool_name, utcnow_text()),
         )
         conn.commit()
-
 
 def mark_enrichment_done(user_id: int, username: str, tool_name: str, found_count: int) -> None:
     init_db()
@@ -575,7 +608,6 @@ def mark_enrichment_done(user_id: int, username: str, tool_name: str, found_coun
         )
         conn.commit()
 
-
 def mark_enrichment_error(user_id: int, username: str, tool_name: str, error_text: str) -> None:
     init_db()
     tool_name = (tool_name or "").strip().lower()
@@ -595,7 +627,6 @@ def mark_enrichment_error(user_id: int, username: str, tool_name: str, error_tex
             (user_id, username, tool_name, utcnow_text(), error_text[:1000]),
         )
         conn.commit()
-
 
 def save_social_accounts(
     user_id: int,
@@ -641,7 +672,6 @@ def save_social_accounts(
         conn.commit()
     return len(unique_accounts)
 
-
 def list_pending_username_checks(limit: int = 100) -> list[dict]:
     init_db()
     with get_connection() as conn:
@@ -656,7 +686,6 @@ def list_pending_username_checks(limit: int = 100) -> list[dict]:
             (limit,),
         ).fetchall()
     return [dict(row) for row in rows]
-
 
 def list_pending_enrichment_checks(tool_name: str, limit: int = 100) -> list[dict]:
     init_db()
@@ -677,7 +706,6 @@ def list_pending_enrichment_checks(tool_name: str, limit: int = 100) -> list[dic
         ).fetchall()
     return [dict(row) for row in rows]
 
-
 def get_dashboard_stats() -> dict[str, int]:
     init_db()
     with get_connection() as conn:
@@ -695,7 +723,6 @@ def get_dashboard_stats() -> dict[str, int]:
             """
         ).fetchone()
     return dict(row)
-
 
 def _summary_query() -> str:
     return """
@@ -821,7 +848,6 @@ def _summary_query() -> str:
         LEFT JOIN maigret_data mg ON mg.user_id = p.user_id
     """
 
-
 def get_analytics_snapshot() -> dict:
     init_db()
     with get_connection() as conn:
@@ -911,7 +937,6 @@ def get_analytics_snapshot() -> dict:
         "exposure_levels": exposure_levels,
     }
 
-
 def get_search_dataset() -> list[dict]:
     init_db()
     with get_connection() as conn:
@@ -924,19 +949,6 @@ def get_search_dataset() -> list[dict]:
         ).fetchall()
     return [dict(row) for row in rows]
 
-
-def list_profiles_summary(limit: int = 5000) -> list[dict]:
-    init_db()
-    with get_connection() as conn:
-        rows = conn.execute(
-            _summary_query()
-            + """
-            ORDER BY osint_score DESC, site_count DESC, group_count DESC, bio_length DESC, p.user_id
-            LIMIT ?
-            """,
-            (limit,),
-        ).fetchall()
-    return [dict(row) for row in rows]
 
 
 def list_user_connections() -> list[dict]:
@@ -951,7 +963,6 @@ def list_user_connections() -> list[dict]:
             """
         ).fetchall()
     return [dict(row) for row in rows]
-
 
 def get_profile_card(user_id: int) -> dict:
     init_db()
@@ -1013,45 +1024,6 @@ def get_profile_card(user_id: int) -> dict:
         "social_accounts": social_accounts,
     }
 
-
-def update_social_account_review(account_id: int, review_status: str, review_note: str = "") -> None:
-    init_db()
-    normalized_status = (review_status or "pending").strip().lower()
-    if normalized_status not in {"pending", "confirmed", "rejected"}:
-        normalized_status = "pending"
-    with get_connection() as conn:
-        _ensure_social_account_reviews_table(conn)
-        conn.execute(
-            """
-            INSERT INTO social_account_reviews (account_id, review_status, review_note, updated_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(account_id) DO UPDATE SET
-                review_status = excluded.review_status,
-                review_note = excluded.review_note,
-                updated_at = excluded.updated_at
-            """,
-            (account_id, normalized_status, review_note or "", utcnow_text()),
-        )
-        conn.commit()
-
-
-def get_latest_sherlock_log(user_id: int) -> dict | None:
-    return None
-
-
-def read_sherlock_log(log_path: str) -> str:
-    path = Path(log_path)
-    try:
-        resolved = path.resolve()
-    except OSError:
-        return ""
-    try:
-        resolved.relative_to(BASE_DIR)
-    except ValueError:
-        return ""
-    if not resolved.exists() or not resolved.is_file():
-        return ""
-    return resolved.read_text(encoding="utf-8", errors="replace")
 
 
 def get_osint_analysis_snapshot() -> dict:
@@ -1130,7 +1102,6 @@ def get_osint_analysis_snapshot() -> dict:
         "group_overlaps": group_overlaps,
     }
 
-
 def export_profile_report_markdown(user_id: int, path: Path | None = None) -> Path:
     init_db()
     PROFILE_REPORTS_DIR.mkdir(exist_ok=True)
@@ -1204,7 +1175,6 @@ Maigret can be launched manually as an additional deep username-enrichment check
     target.write_text(content, encoding="utf-8")
     return target
 
-
 def _write_csv(path: Path, fieldnames: list[str], rows: list[dict]) -> Path:
     with path.open("w", newline="", encoding="utf-8-sig") as file_obj:
         writer = csv.DictWriter(file_obj, fieldnames=fieldnames, delimiter=";")
@@ -1213,7 +1183,6 @@ def _write_csv(path: Path, fieldnames: list[str], rows: list[dict]) -> Path:
             [{field: row.get(field, "") for field in fieldnames} for row in rows]
         )
     return path
-
 
 def export_baseline_csv(path: Path | None = None) -> Path:
     init_db()
@@ -1239,7 +1208,6 @@ def export_baseline_csv(path: Path | None = None) -> Path:
         ["user_id", "first_name", "username", "bio", "photo_path", "group_name"],
         [dict(row) for row in rows],
     )
-
 
 def export_enriched_csv(path: Path | None = None) -> Path:
     init_db()
@@ -1286,7 +1254,6 @@ def export_enriched_csv(path: Path | None = None) -> Path:
         [dict(row) for row in rows],
     )
 
-
 def export_osint_report_csv(path: Path | None = None) -> Path:
     init_db()
     target = path or OSINT_REPORT_PATH
@@ -1322,7 +1289,6 @@ def export_osint_report_csv(path: Path | None = None) -> Path:
         ],
         [dict(row) for row in rows],
     )
-
 
 def export_summary_report_markdown(path: Path | None = None) -> Path:
     init_db()

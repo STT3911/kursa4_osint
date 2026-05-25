@@ -8,10 +8,6 @@ from typing import Any
 
 BASE_DIR = Path(__file__).resolve().parent
 
-# ---------------------------------------------------------------------------
-# Threat keyword taxonomy
-# ---------------------------------------------------------------------------
-
 THREAT_KEYWORDS: dict[str, set[str]] = {
     "high_risk": {
         "exploit", "payload", "reverse shell", "c2", "command and control",
@@ -51,10 +47,10 @@ EXPOSURE_SIGNALS = {
 }
 
 SUSPICIOUS_BIO_PATTERNS = [
-    re.compile(r"\+\d[\d\s\-]{7,}", re.IGNORECASE),    # phone numbers
-    re.compile(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b"),  # IP addresses
-    re.compile(r"[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}", re.IGNORECASE),  # emails in bio
-    re.compile(r"(?:payme|paypal|qiwi|webmoney)[\s:/]", re.IGNORECASE),      # payment links
+    re.compile(r"\+\d[\d\s\-]{7,}", re.IGNORECASE),
+    re.compile(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b"),
+    re.compile(r"[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}", re.IGNORECASE),
+    re.compile(r"(?:payme|paypal|qiwi|webmoney)[\s:/]", re.IGNORECASE),
 ]
 
 HIGH_RISK_SITES = {
@@ -67,9 +63,6 @@ PROFESSIONAL_SECURITY_SITES = {
     "tryhackme", "hackthebox", "ctftime",
 }
 
-
-# Context markers that negate threat meaning of a keyword.
-# If found within ±55 chars of the keyword → false positive → skip.
 _NEGATION_MARKERS = (
     "защита от", "protection from", "anti-", "против ", "prevent",
     "defend", "block", "stop ", "бороться с", "противодействие",
@@ -78,12 +71,10 @@ _NEGATION_MARKERS = (
     "тренинг", "awareness", "осведомлённость",
 )
 
-_CONTEXT_WINDOW = 55  # characters around keyword to inspect
-
+_CONTEXT_WINDOW = 55
 
 def _normalize_text(text: str) -> str:
     return (text or "").lower()
-
 
 def _get_context(normalized_text: str, keyword: str) -> str:
     idx = normalized_text.find(keyword)
@@ -93,11 +84,9 @@ def _get_context(normalized_text: str, keyword: str) -> str:
     end = min(len(normalized_text), idx + len(keyword) + _CONTEXT_WINDOW)
     return normalized_text[start:end]
 
-
 def _is_false_positive(normalized_text: str, keyword: str) -> bool:
     ctx = _get_context(normalized_text, keyword)
     return any(marker in ctx for marker in _NEGATION_MARKERS)
-
 
 def _extract_threat_indicators(text: str) -> dict[str, list[str]]:
     normalized = _normalize_text(text)
@@ -106,7 +95,6 @@ def _extract_threat_indicators(text: str) -> dict[str, list[str]]:
         for kw in keywords:
             if kw not in normalized:
                 continue
-            # High-risk keywords are never negated (malware, exploit → always flag)
             if category == "high_risk":
                 found[category].append(kw)
                 continue
@@ -114,11 +102,9 @@ def _extract_threat_indicators(text: str) -> dict[str, list[str]]:
                 found[category].append(kw)
     return found
 
-
 def _detect_privacy_tools(text: str) -> list[str]:
     normalized = _normalize_text(text)
     return [tool for tool in PRIVACY_TOOLS if tool in normalized]
-
 
 def _detect_exposed_pii(text: str) -> list[str]:
     matched: list[str] = []
@@ -131,7 +117,6 @@ def _detect_exposed_pii(text: str) -> list[str]:
             matched.append(pattern.pattern)
     return matched
 
-
 def _classify_risk(indicators: dict[str, list[str]], site_list: str) -> str:
     sites = _normalize_text(site_list)
     if indicators["high_risk"] or any(s in sites for s in HIGH_RISK_SITES):
@@ -141,7 +126,6 @@ def _classify_risk(indicators: dict[str, list[str]], site_list: str) -> str:
     if indicators["analyst"] or any(s in sites for s in PROFESSIONAL_SECURITY_SITES):
         return "analyst"
     return "low"
-
 
 def _opsec_score(profile: dict[str, Any]) -> tuple[int, list[str]]:
     score = 50
@@ -155,7 +139,6 @@ def _opsec_score(profile: dict[str, Any]) -> tuple[int, list[str]]:
     osint_score = int(profile.get("osint_score") or 0)
     site_list = str(profile.get("site_list") or "")
 
-    # High digital footprint = poor OPSEC
     if osint_score >= 65:
         score -= 20
         notes.append("высокий osint_score — широкий цифровой след")
@@ -172,19 +155,16 @@ def _opsec_score(profile: dict[str, Any]) -> tuple[int, list[str]]:
         score -= 10
         notes.append(f"участие в {group_count} Telegram-группах")
 
-    # PII in bio = very poor OPSEC
     exposed = _detect_exposed_pii(bio)
     if exposed:
         score -= 20
         notes.append(f"персональные данные в bio: {len(exposed)} признаков")
 
-    # Privacy tools = good OPSEC
     privacy = _detect_privacy_tools(bio + " " + username)
     if privacy:
         score += 15
         notes.append(f"признаки использования privacy-инструментов: {', '.join(privacy[:3])}")
 
-    # Minimal profile = high OPSEC
     if not bio.strip():
         score += 10
         notes.append("нет bio — минимальная самораскрытость")
@@ -195,14 +175,12 @@ def _opsec_score(profile: dict[str, Any]) -> tuple[int, list[str]]:
         score += 8
         notes.append("нет фото профиля")
 
-    # Professional security sites = elevated awareness
     sites_lower = site_list.lower()
     if any(s in sites_lower for s in PROFESSIONAL_SECURITY_SITES):
         score += 10
         notes.append("профиль на bug-bounty / CTF платформах")
 
     return max(0, min(100, score)), notes
-
 
 def analyze_profile(profile: dict[str, Any]) -> dict[str, Any]:
     bio = str(profile.get("bio") or "")
@@ -216,7 +194,6 @@ def analyze_profile(profile: dict[str, Any]) -> dict[str, Any]:
     opsec, opsec_notes = _opsec_score(profile)
     exposed_pii = _detect_exposed_pii(bio)
 
-    # Check site list for high-risk/professional security sites
     site_lower = site_list.lower()
     dark_sites = [s for s in HIGH_RISK_SITES if s in site_lower]
     sec_sites = [s for s in PROFESSIONAL_SECURITY_SITES if s in site_lower]
@@ -235,7 +212,6 @@ def analyze_profile(profile: dict[str, Any]) -> dict[str, Any]:
         "security_platforms": sec_sites,
     }
 
-
 def detect_anomalies(profiles: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if not profiles:
         return []
@@ -245,7 +221,6 @@ def detect_anomalies(profiles: list[dict[str, Any]]) -> list[dict[str, Any]]:
     avg_sites = sum(site_counts) / len(site_counts) if site_counts else 0
     avg_bio = sum(bio_lengths) / len(bio_lengths) if bio_lengths else 0
 
-    # Detect shared bio fragments (possible bots/clones)
     bio_map: dict[str, list[int]] = defaultdict(list)
     for p in profiles:
         bio = str(p.get("bio") or "").strip().lower()
@@ -286,7 +261,6 @@ def detect_anomalies(profiles: list[dict[str, Any]]) -> list[dict[str, Any]]:
             })
 
     return sorted(anomalies, key=lambda x: len(x["anomaly_reasons"]), reverse=True)
-
 
 def get_security_snapshot(profiles: list[dict[str, Any]]) -> dict[str, Any]:
     if not profiles:
@@ -350,7 +324,6 @@ def get_security_snapshot(profiles: list[dict[str, Any]]) -> dict[str, Any]:
         "privacy_tools_count": privacy_count,
     }
 
-
 _BOT_PATTERNS = [
     re.compile(r"^[a-z]{2,6}\d{4,10}$"),
     re.compile(r"^[a-z]+_\d{4,}$"),
@@ -359,11 +332,9 @@ _BOT_PATTERNS = [
     re.compile(r"^user\d+$"),
 ]
 
-
 def _username_looks_bot(username: str) -> bool:
     u = (username or "").lower().strip("@")
     return bool(u) and any(p.match(u) for p in _BOT_PATTERNS)
-
 
 def detect_coordinated_behavior(profiles: list[dict[str, Any]]) -> dict[str, Any]:
     """Detect patterns suggesting coordinated inauthentic behavior.
@@ -380,7 +351,6 @@ def detect_coordinated_behavior(profiles: list[dict[str, Any]]) -> dict[str, Any
     bot_users = [p for p in profiles if _username_looks_bot(p.get("username") or "")]
     bot_ratio = len(bot_users) / total
 
-    # Prefix family detection: group usernames by 4-char prefix
     prefix_map: dict[str, list[str]] = defaultdict(list)
     for p in profiles:
         u = (p.get("username") or "").lower().strip("@")
@@ -409,7 +379,6 @@ def detect_coordinated_behavior(profiles: list[dict[str, Any]]) -> dict[str, Any
         "prefix_families": prefix_families,
         "verdict": verdict,
     }
-
 
 def export_security_report(profiles: list[dict[str, Any]], path: Path | None = None) -> Path:
     target = path or BASE_DIR / "security_report.md"

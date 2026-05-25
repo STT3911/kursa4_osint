@@ -11,3 +11,7 @@ streamlit
 plotly
 maigret
 git+https://github.com/sherlock-project/sherlock.git
+maigret>=0.4,<1
+python-telegram-bot==21.*
+networkx>=2.8,<4
+pyvis>=0.3,<1

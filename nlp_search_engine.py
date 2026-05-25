@@ -13,13 +13,12 @@ from ai_classifier import ProfileClassifier
 
 try:
     from sentence_transformers import SentenceTransformer, util
-except ImportError as exc:  # pragma: no cover - runtime dependency guard
+except ImportError as exc:
     SentenceTransformer = None
     util = None
     IMPORT_ERROR = exc
 else:
     IMPORT_ERROR = None
-
 
 class NLPSearchEngine:
     TERM_ALIASES = {

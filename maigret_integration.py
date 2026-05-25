@@ -16,6 +16,7 @@ _MAX_RESULTS = 500
 
 _CLAIMED_STATUSES = {"claimed", "found", "exists", "true"}
 
+_MAIGRET_AVAILABLE: bool | None = None
 
 def _sanitize_username(username: str) -> str:
     username = (username or "").strip().lstrip("@")
@@ -23,17 +24,19 @@ def _sanitize_username(username: str) -> str:
         raise ValueError(f"Invalid username format: {username!r}")
     return username
 
-
 def is_maigret_available() -> bool:
+    global _MAIGRET_AVAILABLE
+    if _MAIGRET_AVAILABLE is not None:
+        return _MAIGRET_AVAILABLE
     try:
         result = subprocess.run(
             [sys.executable, "-m", "maigret", "--version"],
             capture_output=True, text=True, timeout=10, check=False,
         )
-        return result.returncode in (0, 1)
+        _MAIGRET_AVAILABLE = result.returncode in (0, 1)
     except Exception:
-        return False
-
+        _MAIGRET_AVAILABLE = False
+    return _MAIGRET_AVAILABLE
 
 def _parse_maigret_json(json_path: Path, username: str) -> list[dict[str, str]]:
     if not json_path.exists() or json_path.stat().st_size > 8 * 1024 * 1024:
@@ -72,7 +75,6 @@ def _parse_maigret_json(json_path: Path, username: str) -> list[dict[str, str]]:
                 break
 
     return accounts
-
 
 def run_maigret(username: str, timeout: int = 120, top_sites: int = 500) -> list[dict[str, str]]:
     username = _sanitize_username(username)
@@ -123,7 +125,6 @@ def run_maigret(username: str, timeout: int = 120, top_sites: int = 500) -> list
             shutil.rmtree(outdir, ignore_errors=True)
         except OSError:
             pass
-
 
 def process_maigret_check(user_id: int, username: str, timeout: int = 120) -> dict:
     try:

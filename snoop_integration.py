@@ -10,13 +10,11 @@ from pathlib import Path
 
 import database
 
-
 SNOOP_SOURCE_DIR = Path("tools") / "snoop"
 
 _USERNAME_RE = re.compile(r"^[\w\-\.]{1,64}$")
 _MAX_CSV_BYTES = 8 * 1024 * 1024
 _MAX_CSV_ROWS = 5_000
-
 
 def _sanitize_username(username: str) -> str:
     username = (username or "").strip().lstrip("@")
@@ -28,7 +26,6 @@ RESOURCE_COLUMN = "\u0440\u0435\u0441\u0443\u0440\u0441"
 PROFILE_URL_COLUMN = "\u0441\u0441\u044b\u043b\u043a\u0430_\u043d\u0430_\u043f\u0440\u043e\u0444\u0438\u043b\u044c"
 STATUS_COLUMN = "\u0441\u0442\u0430\u0442\u0443\u0441"
 FOUND_STATUS = "\u043d\u0430\u0439\u0434\u0435\u043d"
-
 
 def find_snoop_command() -> tuple[list[str], Path] | None:
     env_dir = os.getenv("SNOOP_DIR", "").strip()
@@ -48,14 +45,11 @@ def find_snoop_command() -> tuple[list[str], Path] | None:
 
     return None
 
-
 def is_snoop_available() -> bool:
     return find_snoop_command() is not None
 
-
 def _normal_key(value: object) -> str:
     return str(value or "").strip().lower().replace(" ", "_")
-
 
 def _get_first(row: dict, keys: tuple[str, ...]) -> str:
     normalized = {_normal_key(key): value for key, value in row.items()}
@@ -65,7 +59,6 @@ def _get_first(row: dict, keys: tuple[str, ...]) -> str:
             return str(value).strip()
     return ""
 
-
 def _is_found_status(value: str) -> bool:
     status = (value or "").strip().lower()
     if not status:
@@ -74,7 +67,6 @@ def _is_found_status(value: str) -> bool:
     if any(marker in status for marker in negative_markers):
         return False
     return any(marker in status for marker in (FOUND_STATUS, "found", "true", "yes", "claimed"))
-
 
 def parse_snoop_csv(csv_path: Path, username: str) -> list[dict[str, str]]:
     if csv_path.stat().st_size > _MAX_CSV_BYTES:
@@ -113,7 +105,6 @@ def parse_snoop_csv(csv_path: Path, username: str) -> list[dict[str, str]]:
             )
     return accounts
 
-
 def _candidate_csv_paths(workdir: Path, username: str) -> list[Path]:
     csv_dir = workdir / "results" / "nicknames" / "csv"
     safe_names = {
@@ -125,7 +116,6 @@ def _candidate_csv_paths(workdir: Path, username: str) -> list[Path]:
     if csv_dir.exists():
         paths.extend(sorted(csv_dir.glob("*.csv"), key=lambda path: path.stat().st_mtime, reverse=True))
     return paths
-
 
 def run_snoop(username: str, timeout: int = 90) -> list[dict[str, str]]:
     resolved = find_snoop_command()
@@ -175,7 +165,6 @@ def run_snoop(username: str, timeout: int = 90) -> list[dict[str, str]]:
         raise RuntimeError(stderr or f"Snoop exited with code {process.returncode}")
 
     return accounts
-
 
 def process_snoop_check(user_id: int, username: str, timeout: int = 90) -> dict:
     username = (username or "").strip().lstrip("@")
