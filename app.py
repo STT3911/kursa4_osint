@@ -14,7 +14,9 @@ from ai_classifier import ProfileClassifier, load_training_report
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from nlp_search_engine import NLPSearchEngine
+from link_graph import draw_link_graph, get_link_analysis
 from maigret_integration import is_maigret_available, process_maigret_check
+from security_analyzer import export_security_report, get_security_snapshot
 from sherlock_integration import is_sherlock_available, process_username_check
 from snoop_integration import is_snoop_available, process_snoop_check
 from telegram_service import TelegramCollector
@@ -78,6 +80,8 @@ class OSINTApp(tk.Tk):
         self.last_search_results: list[dict] = []
         self.last_search_query = ""
         self.last_search_terms: list[str] = []
+        self.security_summary_var = tk.StringVar(value="")
+        self.link_graph_data: dict | None = None
 
         self._build_ui()
         self._start_sherlock_worker()
@@ -97,11 +101,13 @@ class OSINTApp(tk.Tk):
         self.search_tab = ttk.Frame(notebook, padding=12)
         self.analytics_tab = ttk.Frame(notebook, padding=12)
         self.profile_tab = ttk.Frame(notebook, padding=12)
+        self.security_tab = ttk.Frame(notebook, padding=12)
         notebook.add(self.collect_tab, text="Сбор данных")
         notebook.add(self.osint_tab, text="OSINT-анализ")
         notebook.add(self.search_tab, text="NLP-поиск")
         notebook.add(self.analytics_tab, text="Аналитика")
         notebook.add(self.profile_tab, text="Карточка профиля")
+        notebook.add(self.security_tab, text="Кибербезопасность")
         self.notebook = notebook
 
         self._build_collect_tab()
@@ -109,6 +115,7 @@ class OSINTApp(tk.Tk):
         self._build_search_tab()
         self._build_analytics_tab()
         self._build_profile_tab()
+        self._build_security_tab()
 
     def _build_collect_tab(self) -> None:
         form = ttk.LabelFrame(self.collect_tab, text="Настройки Telegram", padding=12)
@@ -421,23 +428,16 @@ class OSINTApp(tk.Tk):
         stats = database.get_dashboard_stats()
         self.profiles_count_var.set(str(stats["profiles"]))
         self.queued_count_var.set(
-            "Sherlock {sherlock} | Snoop {snoop} | Maigret {maigret}".format(
-                sherlock=stats["queued_checks"],
-                snoop=stats.get("queued_snoop_checks", 0),
-                maigret=stats.get("queued_maigret_checks", 0),
-            )
+            f"Sherlock {stats['queued_checks']} | Snoop {stats.get('queued_snoop_checks', 0)} | Maigret {stats.get('queued_maigret_checks', 0)}"
         )
         self.completed_count_var.set(
-            "Sherlock {sherlock} | Snoop {snoop} | Maigret {maigret}".format(
-                sherlock=stats["completed_checks"],
-                snoop=stats.get("completed_snoop_checks", 0),
-                maigret=stats.get("completed_maigret_checks", 0),
-            )
+            f"Sherlock {stats['completed_checks']} | Snoop {stats.get('completed_snoop_checks', 0)} | Maigret {stats.get('completed_maigret_checks', 0)}"
         )
         self.social_count_var.set(str(stats["social_accounts"]))
         self.sherlock_status_var.set(self._build_tools_status())
         self.refresh_osint_analysis()
         self.refresh_analytics()
+        self.refresh_security()
 
     def refresh_osint_analysis(self) -> None:
         snapshot = database.get_osint_analysis_snapshot()
@@ -627,15 +627,13 @@ class OSINTApp(tk.Tk):
             self.snoop_queue.put(item)
         for item in database.list_pending_enrichment_checks("maigret", limit=1000):
             self.maigret_queue.put(item)
-        pending = database.get_dashboard_stats()["queued_checks"]
-        if pending:
-            self._append_log(f"Возобновлено проверок Sherlock из базы данных: {pending}.")
-        pending_snoop = database.get_dashboard_stats().get("queued_snoop_checks", 0)
-        if pending_snoop:
-            self._append_log(f"Возобновлено проверок Snoop из базы данных: {pending_snoop}.")
-        pending_maigret = database.get_dashboard_stats().get("queued_maigret_checks", 0)
-        if pending_maigret:
-            self._append_log(f"Возобновлено проверок Maigret из базы данных: {pending_maigret}.")
+        stats = database.get_dashboard_stats()
+        if stats["queued_checks"]:
+            self._append_log(f"Возобновлено проверок Sherlock: {stats['queued_checks']}.")
+        if stats.get("queued_snoop_checks", 0):
+            self._append_log(f"Возобновлено проверок Snoop: {stats['queued_snoop_checks']}.")
+        if stats.get("queued_maigret_checks", 0):
+            self._append_log(f"Возобновлено проверок Maigret: {stats['queued_maigret_checks']}.")
 
     def _start_sherlock_worker(self) -> None:
         worker = threading.Thread(target=self._sherlock_worker_loop, daemon=True)
@@ -701,7 +699,6 @@ class OSINTApp(tk.Tk):
                 continue
             if item is None:
                 break
-
             user_id = int(item["user_id"])
             username = str(item["username"])
             self.event_queue.put({"type": "log", "message": f"Запущен Maigret для @{username}"})
@@ -1159,7 +1156,6 @@ class OSINTApp(tk.Tk):
         if not self.current_profile_username:
             messagebox.showinfo("Нет username", "У выбранного профиля нет username для проверки через Maigret.")
             return
-
         user_id = self.current_profile_id
         username = self.current_profile_username
         self._append_log(f"Запущена ручная проверка Maigret для @{username}.")
@@ -1167,13 +1163,11 @@ class OSINTApp(tk.Tk):
         def runner() -> None:
             result = process_maigret_check(user_id=user_id, username=username)
             self.search_engine.invalidate()
-            self.event_queue.put(
-                {
-                    "type": "manual_enrichment_done",
-                    "user_id": user_id,
-                    "message": result["message"],
-                }
-            )
+            self.event_queue.put({
+                "type": "manual_enrichment_done",
+                "user_id": user_id,
+                "message": result["message"],
+            })
 
         threading.Thread(target=runner, daemon=True).start()
 
@@ -1183,7 +1177,15 @@ class OSINTApp(tk.Tk):
             self.current_avatar = None
             return
 
-        absolute_path = (Path(__file__).resolve().parent / photo_path).resolve()
+        base_dir = Path(__file__).resolve().parent
+        absolute_path = (base_dir / photo_path).resolve()
+        try:
+            absolute_path.relative_to(base_dir)
+        except ValueError:
+            self.avatar_label.configure(image="", text="Аватар недоступен")
+            self.current_avatar = None
+            return
+
         if not absolute_path.exists() or Image is None or ImageTk is None:
             self.avatar_label.configure(image="", text="Аватар недоступен")
             self.current_avatar = None
@@ -1212,11 +1214,12 @@ class OSINTApp(tk.Tk):
                 )
                 self.refresh_dashboard()
             elif event_type == "enrichment_pending":
-                if event.get("tool_name") == "snoop":
+                tool = event.get("tool_name", "")
+                if tool == "snoop":
                     self.snoop_queue.put(
                         {"user_id": event["user_id"], "username": event["username"], "tool_name": "snoop"}
                     )
-                elif event.get("tool_name") == "maigret":
+                elif tool == "maigret":
                     self.maigret_queue.put(
                         {"user_id": event["user_id"], "username": event["username"], "tool_name": "maigret"}
                     )
@@ -1259,6 +1262,266 @@ class OSINTApp(tk.Tk):
             self.event_queue.task_done()
 
         self.after(200, self._drain_event_queue)
+
+    def _build_security_tab(self) -> None:
+        header = ttk.Frame(self.security_tab)
+        header.pack(fill="x", pady=(0, 8))
+        header.columnconfigure(0, weight=1)
+        ttk.Label(header, textvariable=self.security_summary_var, justify="left").grid(row=0, column=0, sticky="w")
+        ttk.Button(header, text="Обновить анализ", command=self.refresh_security).grid(row=0, column=1, sticky="e")
+        ttk.Button(header, text="Экспорт отчёта", command=self.export_security_report).grid(
+            row=0, column=2, sticky="e", padx=(8, 0)
+        )
+        ttk.Button(header, text="Показать граф связей", command=self.show_link_graph).grid(
+            row=0, column=3, sticky="e", padx=(8, 0)
+        )
+
+        paned = ttk.PanedWindow(self.security_tab, orient="horizontal")
+        paned.pack(fill="both", expand=True)
+
+        left = ttk.Frame(paned)
+        right = ttk.Frame(paned)
+        paned.add(left, weight=3)
+        paned.add(right, weight=2)
+
+        ttk.Label(left, text="Профили с угрозами (высокий / средний риск)").pack(anchor="w")
+        threat_columns = ("risk_level", "opsec_score", "first_name", "username", "threat_count", "osint_score")
+        self.threat_tree = ttk.Treeview(left, columns=threat_columns, show="headings", height=12)
+        for col, title, width in [
+            ("risk_level", "Риск", 80),
+            ("opsec_score", "OPSEC", 70),
+            ("first_name", "Имя", 160),
+            ("username", "Username", 150),
+            ("threat_count", "Индикаторы", 90),
+            ("osint_score", "OSINT", 70),
+        ]:
+            self.threat_tree.heading(col, text=title)
+            self.threat_tree.column(col, width=width, anchor="w")
+        self.threat_tree.pack(fill="both", expand=True, pady=(4, 8))
+        self.threat_tree.tag_configure("high", background="#ffd5d5")
+        self.threat_tree.tag_configure("medium", background="#fff3cc")
+        self.threat_tree.tag_configure("analyst", background="#d5eaff")
+
+        ttk.Label(left, text="Аномалии в наборе данных").pack(anchor="w", pady=(8, 0))
+        self.anomaly_box = ScrolledText(left, height=8, wrap="word")
+        self.anomaly_box.pack(fill="both", expand=True)
+        self.anomaly_box.configure(state="disabled")
+
+        ttk.Label(right, text="Распределение уровней риска").pack(anchor="w")
+        self.risk_dist_box = ScrolledText(right, height=8, wrap="word")
+        self.risk_dist_box.pack(fill="x", pady=(4, 8))
+        self.risk_dist_box.configure(state="disabled")
+
+        ttk.Label(right, text="Распределение OPSEC-баллов").pack(anchor="w")
+        self.opsec_dist_box = ScrolledText(right, height=7, wrap="word")
+        self.opsec_dist_box.pack(fill="x", pady=(4, 8))
+        self.opsec_dist_box.configure(state="disabled")
+
+        ttk.Label(right, text="Анализ графа связей").pack(anchor="w", pady=(8, 0))
+        self.link_stats_box = ScrolledText(right, height=7, wrap="word")
+        self.link_stats_box.pack(fill="x", pady=(4, 8))
+        self.link_stats_box.configure(state="disabled")
+
+        ttk.Label(right, text="Методология оценки угроз").pack(anchor="w", pady=(8, 0))
+        methodology = (
+            "Уровни риска:\n"
+            "  high   — эксплойты, malware, darkweb, C2\n"
+            "  medium — pentest, hacking, phishing, recon\n"
+            "  analyst — bug bounty, SOC, threat intelligence\n"
+            "  low    — угроз не обнаружено\n\n"
+            "OPSEC-балл (0–100):\n"
+            "  Высокий балл = минимальный след + privacy-инструменты.\n"
+            "  Низкий балл = много аккаунтов + PII в bio.\n\n"
+            "Аномалии:\n"
+            "  Клоны/боты, аномальное количество аккаунтов,\n"
+            "  раскрытые персональные данные."
+        )
+        method_box = ScrolledText(right, height=10, wrap="word")
+        method_box.pack(fill="both", expand=True, pady=(4, 0))
+        method_box.insert("1.0", methodology)
+        method_box.configure(state="disabled")
+
+        self.refresh_security()
+
+    def refresh_security(self) -> None:
+        try:
+            profiles = database.get_search_dataset()
+            if not profiles:
+                with database.get_connection() as conn:
+                    rows = conn.execute(
+                        "SELECT user_id, first_name, username, bio, photo_path FROM profiles"
+                    ).fetchall()
+                profiles = [dict(r) for r in rows]
+        except Exception:
+            profiles = []
+
+        snapshot = get_security_snapshot(profiles)
+
+        self.security_summary_var.set(
+            "Профилей: {total} | высокий риск: {high} | средний риск: {medium} | "
+            "аналитики: {analyst} | аномалий: {anomalies} | PII-раскрытий: {pii}".format(
+                total=snapshot["total"],
+                high=snapshot["risk_distribution"].get("high", 0),
+                medium=snapshot["risk_distribution"].get("medium", 0),
+                analyst=snapshot["risk_distribution"].get("analyst", 0),
+                anomalies=len(snapshot["anomalies"]),
+                pii=snapshot["pii_exposed_count"],
+            )
+        )
+
+        for item_id in self.threat_tree.get_children():
+            self.threat_tree.delete(item_id)
+        for t in snapshot["top_threats"]:
+            username = f"@{t['username']}" if t["username"] != "[скрыт]" else "[скрыт]"
+            tag = t["risk_level"] if t["risk_level"] in ("high", "medium", "analyst") else ""
+            self.threat_tree.insert(
+                "",
+                "end",
+                values=(
+                    t["risk_level"],
+                    t["opsec_score"],
+                    t.get("first_name") or "",
+                    username,
+                    t["threat_count"],
+                    t["osint_score"],
+                ),
+                tags=(tag,),
+            )
+
+        anomaly_lines = []
+        for a in snapshot["anomalies"]:
+            username = f"@{a['username']}" if a["username"] != "[скрыт]" else "[скрыт]"
+            anomaly_lines.append(f"{username} (риск={a['risk_level']}, OPSEC={a['opsec_score']}):")
+            for reason in a["anomaly_reasons"]:
+                anomaly_lines.append(f"  • {reason}")
+            anomaly_lines.append("")
+        self.anomaly_box.configure(state="normal")
+        self.anomaly_box.delete("1.0", "end")
+        self.anomaly_box.insert("1.0", "\n".join(anomaly_lines) if anomaly_lines else "Аномалий не обнаружено.")
+        self.anomaly_box.configure(state="disabled")
+
+        risk_lines = []
+        for level, count in sorted(snapshot["risk_distribution"].items()):
+            bar = "█" * min(count, 40)
+            risk_lines.append(f"{level:12s} {count:4d}  {bar}")
+        self.risk_dist_box.configure(state="normal")
+        self.risk_dist_box.delete("1.0", "end")
+        self.risk_dist_box.insert("1.0", "\n".join(risk_lines) if risk_lines else "Нет данных.")
+        self.risk_dist_box.configure(state="disabled")
+
+        opsec_lines = []
+        for bucket, count in snapshot["opsec_distribution"].items():
+            bar = "█" * min(count, 40)
+            opsec_lines.append(f"{bucket:22s} {count:4d}  {bar}")
+        self.opsec_dist_box.configure(state="normal")
+        self.opsec_dist_box.delete("1.0", "end")
+        self.opsec_dist_box.insert("1.0", "\n".join(opsec_lines) if opsec_lines else "Нет данных.")
+        self.opsec_dist_box.configure(state="disabled")
+
+        try:
+            self.link_graph_data = get_link_analysis()
+        except Exception:
+            self.link_graph_data = None
+        self._refresh_link_stats()
+
+    def _refresh_link_stats(self) -> None:
+        data = self.link_graph_data
+        if not data or not data.get("available"):
+            text = "Граф недоступен: нет профилей или networkx не установлен."
+        else:
+            metrics = data["metrics"]
+            bot_networks = data["bot_networks"]
+            lines = [
+                f"Узлов: {metrics['nodes']}  Рёбер: {metrics['edges']}",
+                f"Компонент: {metrics['components']}  "
+                f"Крупнейший: {metrics['largest_component']}  "
+                f"Изолированных: {metrics['isolated_count']}",
+            ]
+            if metrics.get("bridge_nodes"):
+                lines.append("Мосты: " + ", ".join(metrics["bridge_nodes"][:5]))
+            if metrics.get("top_central"):
+                top = metrics["top_central"][:3]
+                lines.append(
+                    "Центральные узлы: "
+                    + ", ".join(f"{n['label']} (deg={n['degree_centrality']:.2f})" for n in top)
+                )
+            suspicious_count = sum(1 for c in metrics.get("clusters", []) if c.get("suspicious"))
+            lines.append(f"Подозрительных кластеров: {suspicious_count}")
+            if bot_networks:
+                lines.append(f"Бот-сетей обнаружено: {len(bot_networks)}")
+                for bn in bot_networks[:3]:
+                    lines.append(
+                        f"  Кластер {bn['cluster_id']}: {bn['size']} узлов, "
+                        f"бот-доля={bn['bot_ratio']:.0%} — {bn['verdict']}"
+                    )
+            else:
+                lines.append("Бот-сетей не обнаружено.")
+            text = "\n".join(lines)
+        self.link_stats_box.configure(state="normal")
+        self.link_stats_box.delete("1.0", "end")
+        self.link_stats_box.insert("1.0", text)
+        self.link_stats_box.configure(state="disabled")
+
+    def show_link_graph(self) -> None:
+        data = self.link_graph_data
+        if not data or not data.get("networkx_available"):
+            messagebox.showinfo(
+                "networkx недоступен",
+                "Установите networkx для визуализации графа:\n  pip install networkx",
+            )
+            return
+        if not data.get("available"):
+            messagebox.showinfo("Граф пуст", "Нет профилей для построения графа.")
+            return
+
+        G = data["graph"]
+        metrics = data.get("metrics", {})
+
+        profile_risks: dict[int, str] = {}
+        try:
+            profiles = database.get_search_dataset() or []
+            from security_analyzer import analyze_profile
+            for p in profiles:
+                result = analyze_profile(p)
+                profile_risks[int(p["user_id"])] = result.get("risk_level", "unknown")
+        except Exception:
+            pass
+
+        win = tk.Toplevel(self)
+        win.title("Граф связей профилей")
+        win.geometry("960x700")
+
+        info_var = tk.StringVar(value=(
+            f"Узлов: {metrics.get('nodes', 0)}  "
+            f"Рёбер: {metrics.get('edges', 0)}  "
+            f"Компонент: {metrics.get('components', 0)}  "
+            f"Бот-сетей: {len(data.get('bot_networks', []))}"
+        ))
+        ttk.Label(win, textvariable=info_var, justify="left").pack(anchor="w", padx=10, pady=(8, 4))
+
+        fig = Figure(figsize=(9.2, 6.2), dpi=100)
+        ax = fig.add_subplot(111)
+        draw_link_graph(G, ax, max_nodes=80, profile_risks=profile_risks)
+        fig.tight_layout()
+
+        canvas = FigureCanvasTkAgg(fig, master=win)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+    def export_security_report(self) -> None:
+        try:
+            profiles = database.get_search_dataset()
+            if not profiles:
+                with database.get_connection() as conn:
+                    rows = conn.execute(
+                        "SELECT user_id, first_name, username, bio, photo_path FROM profiles"
+                    ).fetchall()
+                profiles = [dict(r) for r in rows]
+        except Exception as exc:
+            messagebox.showerror("Ошибка экспорта", str(exc))
+            return
+        path = export_security_report(profiles)
+        self._append_log(f"Security-отчёт сохранён: {path}")
 
     def _on_close(self) -> None:
         self.shutdown_event.set()

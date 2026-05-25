@@ -1,201 +1,140 @@
 from __future__ import annotations
 
-import csv
 import json
-import shutil
+import os
+import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+from typing import Any
 
 import database
 
+_USERNAME_RE = re.compile(r"^[\w\-\.]{1,64}$")
+_MAX_RESULTS = 500
 
-MAIGRET_OUTPUT_DIR = database.RUNTIME_DIR / "maigret_output"
+_CLAIMED_STATUSES = {"claimed", "found", "exists", "true"}
 
 
-def find_maigret_command() -> list[str] | None:
-    binary = shutil.which("maigret")
-    if binary:
-        return [binary]
-
-    scripts_dir = Path(sys.executable).resolve().parent
-    for candidate in (scripts_dir / "maigret.exe", scripts_dir / "maigret"):
-        if candidate.exists():
-            return [str(candidate)]
-
-    try:
-        import maigret  # noqa: F401
-    except ImportError:
-        return None
-    return [sys.executable, "-m", "maigret"]
+def _sanitize_username(username: str) -> str:
+    username = (username or "").strip().lstrip("@")
+    if not _USERNAME_RE.match(username):
+        raise ValueError(f"Invalid username format: {username!r}")
+    return username
 
 
 def is_maigret_available() -> bool:
-    return find_maigret_command() is not None
-
-
-def _is_found_status(value: object) -> bool:
-    text = str(value or "").strip().lower()
-    if not text:
-        return False
-    negative_markers = ("not found", "unclaimed", "available", "false", "no")
-    if any(marker in text for marker in negative_markers):
-        return False
-    return any(marker in text for marker in ("claimed", "found", "true", "yes"))
-
-
-def _safe_report_username(username: str) -> str:
-    return (username or "").strip().lstrip("@").replace("/", "_")
-
-
-def parse_maigret_csv(csv_path: Path, username: str) -> list[dict[str, str]]:
-    accounts: list[dict[str, str]] = []
-    with csv_path.open("r", newline="", encoding="utf-8", errors="replace") as file_obj:
-        reader = csv.DictReader(file_obj)
-        for row in reader:
-            lowered = {str(key).lower(): value for key, value in row.items()}
-            site_name = str(lowered.get("name") or lowered.get("site") or "").strip()
-            profile_url = str(
-                lowered.get("url_user")
-                or lowered.get("profile_url")
-                or lowered.get("url")
-                or ""
-            ).strip()
-            status = lowered.get("exists") or lowered.get("status")
-            if not site_name or not profile_url.startswith(("http://", "https://")):
-                continue
-            if not _is_found_status(status):
-                continue
-            accounts.append(
-                {
-                    "site_name": site_name,
-                    "profile_url": profile_url,
-                    "username": username,
-                }
-            )
-    return accounts
-
-
-def parse_maigret_json(json_path: Path, username: str) -> list[dict[str, str]]:
     try:
-        payload = json.loads(json_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        result = subprocess.run(
+            [sys.executable, "-m", "maigret", "--version"],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+        return result.returncode in (0, 1)
+    except Exception:
+        return False
+
+
+def _parse_maigret_json(json_path: Path, username: str) -> list[dict[str, str]]:
+    if not json_path.exists() or json_path.stat().st_size > 8 * 1024 * 1024:
+        return []
+
+    try:
+        data: dict[str, Any] = json.loads(json_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
         return []
 
     accounts: list[dict[str, str]] = []
-    if isinstance(payload, dict):
-        iterator = payload.items()
-    else:
-        iterator = []
-
-    for site_name, data in iterator:
-        if not isinstance(data, dict):
+    for _uname, sites in data.items():
+        if not isinstance(sites, dict):
             continue
-        status = data.get("status")
-        if isinstance(status, dict):
-            status_value = status.get("status") or status.get("name") or status.get("message")
-        else:
-            status_value = status
-        profile_url = str(
-            data.get("url_user")
-            or data.get("profile_url")
-            or data.get("url")
-            or ""
-        ).strip()
-        if not profile_url.startswith(("http://", "https://")):
-            continue
-        if not _is_found_status(status_value):
-            continue
-        accounts.append(
-            {
+        for site_name, info in sites.items():
+            if not isinstance(info, dict):
+                continue
+            status = info.get("status") or {}
+            status_id = str(status.get("id") or "").lower()
+            if status_id not in _CLAIMED_STATUSES:
+                continue
+            url = (
+                info.get("url_user")
+                or info.get("url")
+                or info.get("profile_url")
+                or ""
+            )
+            if not url or not url.startswith(("http://", "https://")):
+                continue
+            accounts.append({
                 "site_name": str(site_name).strip(),
-                "profile_url": profile_url,
+                "profile_url": str(url).strip(),
                 "username": username,
-            }
-        )
+            })
+            if len(accounts) >= _MAX_RESULTS:
+                break
+
     return accounts
 
 
-def run_maigret(
-    username: str,
-    timeout: int = 180,
-    site_timeout: int = 10,
-    top_sites: int = 500,
-) -> list[dict[str, str]]:
-    command = find_maigret_command()
-    if command is None:
-        raise RuntimeError("Maigret is not installed. Install 'maigret' before running enrichment.")
+def run_maigret(username: str, timeout: int = 120, top_sites: int = 500) -> list[dict[str, str]]:
+    username = _sanitize_username(username)
 
-    username = (username or "").strip().lstrip("@")
-    if not username:
-        return []
+    outdir = Path(tempfile.mkdtemp(prefix="maigret_"))
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
 
-    MAIGRET_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    safe_username = _safe_report_username(username)
-    csv_path = MAIGRET_OUTPUT_DIR / f"report_{safe_username}.csv"
-    json_path = MAIGRET_OUTPUT_DIR / f"report_{safe_username}_simple.json"
+    cmd = [
+        sys.executable, "-m", "maigret", username,
+        "--no-progressbar", "--no-color",
+        "--timeout", "8",
+        "--no-recursion",
+        "--top-sites", str(top_sites),
+        "-J", "simple",
+        "--folderoutput", str(outdir),
+    ]
 
-    for path in (csv_path, json_path):
+    try:
+        process = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            env=env,
+            check=False,
+        )
+
+        json_candidates = list(outdir.glob("*.json"))
+        accounts: list[dict[str, str]] = []
+        for json_file in json_candidates:
+            accounts = _parse_maigret_json(json_file, username)
+            if accounts:
+                break
+
+        if process.returncode not in (0, 1) and not accounts:
+            stderr = process.stderr.strip()[:200]
+            raise RuntimeError(stderr or f"Maigret exited with code {process.returncode}")
+
+        return accounts
+
+    finally:
         try:
-            if path.exists():
-                path.unlink()
+            import shutil
+            shutil.rmtree(outdir, ignore_errors=True)
         except OSError:
             pass
 
-    process = subprocess.run(
-        command
-        + [
-            username,
-            "--no-autoupdate",
-            "--no-recursion",
-            "--no-extracting",
-            "--csv",
-            "--json",
-            "simple",
-            "--folderoutput",
-            str(MAIGRET_OUTPUT_DIR),
-            "--top-sites",
-            str(top_sites),
-            "--timeout",
-            str(site_timeout),
-            "--no-color",
-            "--no-progressbar",
-        ],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        cwd=str(database.BASE_DIR),
-        timeout=timeout,
-        check=False,
-    )
 
-    accounts: list[dict[str, str]] = []
-    if csv_path.exists():
-        accounts = parse_maigret_csv(csv_path, username)
-    if not accounts and json_path.exists():
-        accounts = parse_maigret_json(json_path, username)
-
-    if process.returncode not in (0, 1):
-        stderr = process.stderr.strip() or process.stdout.strip()
-        raise RuntimeError(stderr or f"Maigret exited with code {process.returncode}")
-
-    return accounts
-
-
-def process_maigret_check(user_id: int, username: str, timeout: int = 180) -> dict:
-    username = (username or "").strip().lstrip("@")
-    if not username:
-        database.mark_enrichment_skipped(user_id, username, "maigret")
-        return {"status": "skipped", "found_count": 0, "message": "Username is empty"}
+def process_maigret_check(user_id: int, username: str, timeout: int = 120) -> dict:
+    try:
+        username = _sanitize_username(username)
+    except ValueError as exc:
+        database.mark_enrichment_skipped(user_id, username or "", "maigret")
+        return {"status": "skipped", "found_count": 0, "message": str(exc)}
 
     if not is_maigret_available():
         database.mark_enrichment_skipped(user_id, username, "maigret")
-        return {
-            "status": "skipped",
-            "found_count": 0,
-            "message": "Maigret is not installed; skipped.",
-        }
+        return {"status": "skipped", "found_count": 0, "message": "Maigret не установлен."}
 
     try:
         accounts = run_maigret(username=username, timeout=timeout)
@@ -204,12 +143,13 @@ def process_maigret_check(user_id: int, username: str, timeout: int = 180) -> di
         return {
             "status": "done",
             "found_count": found_count,
-            "message": f"Maigret found {found_count} accounts for @{username}",
+            "message": f"Maigret: найдено {found_count} аккаунтов для @{username}",
         }
+    except subprocess.TimeoutExpired:
+        err = "Maigret timed out"
+        database.mark_enrichment_error(user_id, username, "maigret", err)
+        return {"status": "error", "found_count": 0, "message": err}
     except Exception as exc:
-        database.mark_enrichment_error(user_id, username, "maigret", str(exc))
-        return {
-            "status": "error",
-            "found_count": 0,
-            "message": str(exc),
-        }
+        err = f"Maigret check failed ({type(exc).__name__})"
+        database.mark_enrichment_error(user_id, username, "maigret", err)
+        return {"status": "error", "found_count": 0, "message": err}

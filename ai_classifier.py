@@ -184,6 +184,10 @@ class ProfileClassifier:
     def _load_classifier(self) -> None:
         if joblib is None or not self.classifier_path.exists():
             return
+        try:
+            self.classifier_path.resolve().relative_to(MODELS_DIR.resolve())
+        except ValueError:
+            return
         artifact = joblib.load(self.classifier_path)
         if isinstance(artifact, dict):
             self._classifier = artifact.get("classifier")

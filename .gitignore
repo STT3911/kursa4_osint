@@ -26,3 +26,13 @@ coursework_report_summary.md
 search_results_*.csv
 
 identity_pairs.csv.bak
+osint_report.csv
+nlp_dataset.csv
+/.claude
+identity_pairs_raw.csv
+identity_pairs.csv
+osint_database.db
+models/profile_classifier_report.json
+models/profile_classifier.joblib
+models/identity_matcher_report.json
+models/identity_matcher.joblib

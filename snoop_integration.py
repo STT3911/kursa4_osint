@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -11,6 +12,17 @@ import database
 
 
 SNOOP_SOURCE_DIR = Path("tools") / "snoop"
+
+_USERNAME_RE = re.compile(r"^[\w\-\.]{1,64}$")
+_MAX_CSV_BYTES = 8 * 1024 * 1024
+_MAX_CSV_ROWS = 5_000
+
+
+def _sanitize_username(username: str) -> str:
+    username = (username or "").strip().lstrip("@")
+    if not _USERNAME_RE.match(username):
+        raise ValueError(f"Invalid username format: {username!r}")
+    return username
 
 RESOURCE_COLUMN = "\u0440\u0435\u0441\u0443\u0440\u0441"
 PROFILE_URL_COLUMN = "\u0441\u0441\u044b\u043b\u043a\u0430_\u043d\u0430_\u043f\u0440\u043e\u0444\u0438\u043b\u044c"
@@ -65,13 +77,17 @@ def _is_found_status(value: str) -> bool:
 
 
 def parse_snoop_csv(csv_path: Path, username: str) -> list[dict[str, str]]:
+    if csv_path.stat().st_size > _MAX_CSV_BYTES:
+        return []
     accounts: list[dict[str, str]] = []
     with csv_path.open("r", newline="", encoding="utf-8-sig", errors="replace") as file_obj:
         sample = file_obj.read(4096)
         file_obj.seek(0)
         delimiter = ";" if sample.count(";") >= sample.count(",") else ","
         reader = csv.DictReader(file_obj, delimiter=delimiter)
-        for row in reader:
+        for _row_idx, row in enumerate(reader):
+            if _row_idx >= _MAX_CSV_ROWS:
+                break
             site_name = _get_first(row, (RESOURCE_COLUMN, "resource", "site", "name"))
             profile_url = _get_first(
                 row,
@@ -120,7 +136,7 @@ def run_snoop(username: str, timeout: int = 90) -> list[dict[str, str]]:
         )
 
     command, workdir = resolved
-    username = (username or "").strip().lstrip("@")
+    username = _sanitize_username(username)
     if not username:
         return []
 
@@ -184,10 +200,15 @@ def process_snoop_check(user_id: int, username: str, timeout: int = 90) -> dict:
             "found_count": found_count,
             "message": f"Snoop found {found_count} accounts for @{username}",
         }
+    except subprocess.TimeoutExpired:
+        err = "Snoop timed out"
+        database.mark_enrichment_error(user_id, username, "snoop", err)
+        return {"status": "error", "found_count": 0, "message": err}
+    except ValueError as exc:
+        err = str(exc)
+        database.mark_enrichment_error(user_id, username, "snoop", err)
+        return {"status": "error", "found_count": 0, "message": err}
     except Exception as exc:
-        database.mark_enrichment_error(user_id, username, "snoop", str(exc))
-        return {
-            "status": "error",
-            "found_count": 0,
-            "message": str(exc),
-        }
+        err = f"Snoop check failed ({type(exc).__name__})"
+        database.mark_enrichment_error(user_id, username, "snoop", err)
+        return {"status": "error", "found_count": 0, "message": err}

@@ -19,10 +19,20 @@ from identity_matcher import (
 
 try:
     import joblib
-    from sklearn.ensemble import RandomForestClassifier
+    import numpy as np
+    from sklearn.calibration import CalibratedClassifierCV
+    from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
     from sklearn.linear_model import LogisticRegression
-    from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, roc_auc_score
-    from sklearn.model_selection import train_test_split
+    from sklearn.metrics import (
+        accuracy_score,
+        classification_report,
+        confusion_matrix,
+        f1_score,
+        precision_score,
+        recall_score,
+        roc_auc_score,
+    )
+    from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
 except ImportError as exc:  # pragma: no cover - runtime dependency guard
     raise SystemExit(
         "Missing ML dependencies. Install requirements.txt before training: "
@@ -155,6 +165,18 @@ def export_candidates(path: Path) -> Path:
     return path
 
 
+def _find_optimal_threshold(y_test: list[int], y_prob: list[float]) -> float:
+    best_f1 = -1.0
+    best_thresh = 0.5
+    for thresh in [t / 100 for t in range(30, 80, 5)]:
+        preds = [1 if p >= thresh else 0 for p in y_prob]
+        f1 = f1_score(y_test, preds, pos_label=1, zero_division=0)
+        if f1 > best_f1:
+            best_f1 = f1
+            best_thresh = thresh
+    return best_thresh
+
+
 def _build_report(
     rows: list[dict[str, Any]],
     y_test: list[int],
@@ -162,24 +184,34 @@ def _build_report(
     y_prob: list[float],
     classifier_name: str,
     random_state: int,
+    cv_scores: dict[str, Any] | None = None,
+    threshold: float = 0.5,
 ) -> dict[str, Any]:
     labels = [0, 1]
     try:
         roc_auc = roc_auc_score(y_test, y_prob)
     except ValueError:
         roc_auc = 0.0
-    return {
+
+    thresh_preds = [1 if p >= threshold else 0 for p in y_prob]
+
+    report: dict[str, Any] = {
         "task": "identity linkage / same-person account matching",
         "classifier": classifier_name,
         "feature_names": FEATURE_NAMES,
         "rows_total": len(rows),
         "class_distribution": dict(Counter(row["label"] for row in rows)),
         "random_state": random_state,
+        "decision_threshold": round(threshold, 2),
         "accuracy": round(float(accuracy_score(y_test, y_pred)), 4),
+        "accuracy_at_threshold": round(float(accuracy_score(y_test, thresh_preds)), 4),
         "roc_auc": round(float(roc_auc), 4),
+        "precision_same_person": round(float(precision_score(y_test, thresh_preds, pos_label=1, zero_division=0)), 4),
+        "recall_same_person": round(float(recall_score(y_test, thresh_preds, pos_label=1, zero_division=0)), 4),
+        "f1_same_person": round(float(f1_score(y_test, thresh_preds, pos_label=1, zero_division=0)), 4),
         "classification_report": classification_report(
             y_test,
-            y_pred,
+            thresh_preds,
             labels=labels,
             target_names=["different_person", "same_person"],
             output_dict=True,
@@ -187,7 +219,7 @@ def _build_report(
         ),
         "confusion_matrix": {
             "labels": ["different_person", "same_person"],
-            "matrix": confusion_matrix(y_test, y_pred, labels=labels).tolist(),
+            "matrix": confusion_matrix(y_test, thresh_preds, labels=labels).tolist(),
         },
         "examples": [
             {
@@ -200,6 +232,9 @@ def _build_report(
             for row in rows[:20]
         ],
     }
+    if cv_scores:
+        report["cross_validation"] = cv_scores
+    return report
 
 
 def train(args: argparse.Namespace) -> dict[str, Any]:
@@ -223,30 +258,55 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
     )
 
     if args.classifier == "random_forest":
-        model = RandomForestClassifier(
-            n_estimators=200,
+        base_model = RandomForestClassifier(
+            n_estimators=300,
             min_samples_leaf=2,
+            max_features="sqrt",
             class_weight="balanced",
             random_state=args.random_state,
         )
         classifier_name = "RandomForestClassifier"
+    elif args.classifier == "gradient_boosting":
+        base_model = GradientBoostingClassifier(
+            n_estimators=200,
+            learning_rate=0.08,
+            max_depth=4,
+            subsample=0.8,
+            random_state=args.random_state,
+        )
+        classifier_name = "GradientBoostingClassifier"
     else:
-        model = LogisticRegression(
-            max_iter=1000,
+        base_model = LogisticRegression(
+            max_iter=2000,
+            C=1.0,
             class_weight="balanced",
+            solver="lbfgs",
             random_state=args.random_state,
         )
         classifier_name = "LogisticRegression"
 
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=args.random_state)
+    cv_roc = cross_val_score(base_model, x, y, cv=cv, scoring="roc_auc")
+    cv_f1 = cross_val_score(base_model, x, y, cv=cv, scoring="f1")
+    cv_scores = {
+        "folds": 5,
+        "roc_auc_mean": round(float(np.mean(cv_roc)), 4),
+        "roc_auc_std": round(float(np.std(cv_roc)), 4),
+        "f1_mean": round(float(np.mean(cv_f1)), 4),
+        "f1_std": round(float(np.std(cv_f1)), 4),
+    }
+
+    model = CalibratedClassifierCV(base_model, cv=3, method="isotonic")
     model.fit(x_train, y_train)
+
     y_pred = list(model.predict(x_test))
-    if hasattr(model, "predict_proba"):
-        classes = list(getattr(model, "classes_", []))
-        probabilities = model.predict_proba(x_test)
-        positive_index = classes.index(1)
-        y_prob = [float(row[positive_index]) for row in probabilities]
-    else:
-        y_prob = [float(value) for value in y_pred]
+    classes = list(getattr(model, "classes_", [0, 1]))
+    probabilities = model.predict_proba(x_test)
+    positive_index = classes.index(1) if 1 in classes else -1
+    y_prob = [float(row[positive_index]) for row in probabilities]
+
+    threshold = _find_optimal_threshold(list(y_test), y_prob)
+    thresh_preds = [1 if p >= threshold else 0 for p in y_prob]
 
     MODELS_DIR.mkdir(exist_ok=True)
     joblib.dump(
@@ -254,16 +314,19 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
             "model": model,
             "feature_names": FEATURE_NAMES,
             "classifier": classifier_name,
+            "decision_threshold": threshold,
         },
         IDENTITY_MODEL_PATH,
     )
     report = _build_report(
         rows=rows,
         y_test=list(y_test),
-        y_pred=y_pred,
+        y_pred=thresh_preds,
         y_prob=y_prob,
         classifier_name=classifier_name,
         random_state=args.random_state,
+        cv_scores=cv_scores,
+        threshold=threshold,
     )
     IDENTITY_REPORT_PATH.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     return report
@@ -278,8 +341,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-rows", type=int, default=20)
     parser.add_argument(
         "--classifier",
-        choices=("logistic_regression", "random_forest"),
-        default="logistic_regression",
+        choices=("logistic_regression", "random_forest", "gradient_boosting"),
+        default="gradient_boosting",
     )
     return parser
 
@@ -296,8 +359,18 @@ def main() -> int:
     print("Identity matcher training completed.")
     print(f"Model: {IDENTITY_MODEL_PATH}")
     print(f"Report: {IDENTITY_REPORT_PATH}")
-    print(f"Accuracy: {report['accuracy']:.4f}")
+    print(f"Decision threshold: {report['decision_threshold']:.2f}")
+    print(f"Accuracy@threshold: {report['accuracy_at_threshold']:.4f}")
     print(f"ROC-AUC: {report['roc_auc']:.4f}")
+    print(f"Precision (same_person): {report['precision_same_person']:.4f}")
+    print(f"Recall    (same_person): {report['recall_same_person']:.4f}")
+    print(f"F1        (same_person): {report['f1_same_person']:.4f}")
+    if "cross_validation" in report:
+        cv = report["cross_validation"]
+        print(
+            f"Cross-val ROC-AUC: {cv['roc_auc_mean']:.4f} ± {cv['roc_auc_std']:.4f}  "
+            f"F1: {cv['f1_mean']:.4f} ± {cv['f1_std']:.4f}"
+        )
     print("Class distribution:")
     for label, count in sorted(report["class_distribution"].items()):
         print(f"  {label}: {count}")
