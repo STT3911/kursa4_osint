@@ -134,16 +134,15 @@ class TelegramCollector:
                     )
                 queued_snoop = database.queue_enrichment_check_if_needed(user.id, username, "snoop")
                 if queued_snoop:
-                    self._emit(
-                        event_callback,
-                        "enrichment_pending",
-                        user_id=user.id,
-                        username=username,
-                        tool_name="snoop",
-                    )
+                    self._emit(event_callback, "enrichment_pending",
+                               user_id=user.id, username=username, tool_name="snoop")
+                if database.queue_enrichment_check_if_needed(user.id, username, "maigret"):
+                    self._emit(event_callback, "enrichment_pending",
+                               user_id=user.id, username=username, tool_name="maigret")
             else:
                 database.mark_username_skipped(user.id, "")
                 database.mark_enrichment_skipped(user.id, "", "snoop")
+                database.mark_enrichment_skipped(user.id, "", "maigret")
 
             result = {
                 "user_id": user.id,
@@ -211,13 +210,11 @@ class TelegramCollector:
                             username=user.username,
                         )
                     if user.username and database.queue_enrichment_check_if_needed(user.id, user.username, "snoop"):
-                        self._emit(
-                            event_callback,
-                            "enrichment_pending",
-                            user_id=user.id,
-                            username=user.username,
-                            tool_name="snoop",
-                        )
+                        self._emit(event_callback, "enrichment_pending",
+                                   user_id=user.id, username=user.username, tool_name="snoop")
+                    if user.username and database.queue_enrichment_check_if_needed(user.id, user.username, "maigret"):
+                        self._emit(event_callback, "enrichment_pending",
+                                   user_id=user.id, username=user.username, tool_name="maigret")
                     self._emit(
                         event_callback,
                         "progress",
@@ -278,16 +275,15 @@ class TelegramCollector:
                             username=user.username,
                         )
                     if database.queue_enrichment_check_if_needed(user.id, user.username, "snoop"):
-                        self._emit(
-                            event_callback,
-                            "enrichment_pending",
-                            user_id=user.id,
-                            username=user.username,
-                            tool_name="snoop",
-                        )
+                        self._emit(event_callback, "enrichment_pending",
+                                   user_id=user.id, username=user.username, tool_name="snoop")
+                    if database.queue_enrichment_check_if_needed(user.id, user.username, "maigret"):
+                        self._emit(event_callback, "enrichment_pending",
+                                   user_id=user.id, username=user.username, tool_name="maigret")
                 else:
                     database.mark_username_skipped(user.id, "")
                     database.mark_enrichment_skipped(user.id, "", "snoop")
+                    database.mark_enrichment_skipped(user.id, "", "maigret")
                     stats.skipped_usernames += 1
 
                 self._emit(

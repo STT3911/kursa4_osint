@@ -12,7 +12,6 @@ nlp_dataset.csv
 identity_pairs_raw.csv
 identity_pairs.csv
 osint_database.db
-identity_pairs.csv
 models/profile_classifier_report.json
 models/profile_classifier.joblib
 models/identity_matcher_report.json

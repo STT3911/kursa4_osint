@@ -18,8 +18,11 @@
 ## Установка
 
 ```powershell
-py -3.12 -m pip install -r requirements.txt
+py -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
 ```
+
+> **Важно:** всегда запускать через `.venv\Scripts\python.exe`, иначе Sherlock и Snoop не найдут свои зависимости.
 
 Для работы Telegram-сбора нужны переменные окружения:
 
@@ -63,28 +66,28 @@ $env:SNOOP_DIR="D:\path\to\snoop"
 Графический интерфейс:
 
 ```powershell
-py -3.12 app.py
+.venv\Scripts\python.exe app.py
 ```
 
 CLI-сценарии:
 
 ```powershell
-py -3.12 parser.py --group rabota_chaty1 --limit 100
-py -3.12 ai_search.py
-py -3.12 exp_csv.py
-py -3.12 con_db.py
+.venv\Scripts\python.exe parser.py --group rabota_chaty1 --limit 100
+.venv\Scripts\python.exe ai_search.py
+.venv\Scripts\python.exe exp_csv.py
+.venv\Scripts\python.exe con_db.py
 ```
 
 Обучение AI-классификатора:
 
 ```powershell
-py -3.12 train_classifier.py
+.venv\Scripts\python.exe train_classifier.py
 ```
 
 Если модель эмбеддингов еще не скачана локально:
 
 ```powershell
-py -3.12 train_classifier.py --download-model
+.venv\Scripts\python.exe train_classifier.py --download-model
 ```
 
 После обучения артефакты сохраняются в `models/`:
@@ -99,7 +102,7 @@ py -3.12 train_classifier.py --download-model
 Экспорт кандидатов для ручной разметки:
 
 ```powershell
-py -3.12 train_identity_matcher.py --export-candidates identity_pairs.csv
+.venv\Scripts\python.exe train_identity_matcher.py --export-candidates identity_pairs.csv
 ```
 
 В файле `identity_pairs.csv` нужно заполнить колонку `label`:
@@ -110,7 +113,7 @@ py -3.12 train_identity_matcher.py --export-candidates identity_pairs.csv
 Если ручной разметки мало, можно добавить осторожную weak-разметку:
 
 ```powershell
-py -3.12 auto_label_identity_pairs.py --input identity_pairs.csv --synthetic-negatives 100
+.venv\Scripts\python.exe auto_label_identity_pairs.py --input identity_pairs.csv --synthetic-negatives 100
 ```
 
 Скрипт не перезаписывает ручные метки, делает backup `identity_pairs.csv.bak`, заполняет только уверенные пустые строки и добавляет синтетические отрицательные пары для баланса классов.
@@ -118,7 +121,7 @@ py -3.12 auto_label_identity_pairs.py --input identity_pairs.csv --synthetic-neg
 Обучение модели:
 
 ```powershell
-py -3.12 train_identity_matcher.py --labels identity_pairs.csv
+.venv\Scripts\python.exe train_identity_matcher.py --labels identity_pairs.csv
 ```
 
 Артефакты сохраняются в `models/`:
@@ -155,8 +158,23 @@ py -3.12 train_identity_matcher.py --labels identity_pairs.csv
 - `COURSEWORK_STRUCTURE.md` — разделение работы между участниками.
 - `NLP_IMPROVEMENT_BRIEF.md` — описание AI/NLP-части.
 
+## Кибербезопасность
+
+Вкладка **«Кибербезопасность»** реализует:
+
+- **Угрозный профайлинг** — детектирование ключевых слов из категорий `high / medium / analyst` с контекстным окном ±55 символов для подавления ложных срабатываний («защита от фишинга» ≠ фишинг).
+- **OPSEC-балл (0–100)** — оценка цифрового следа: Privacy-инструменты (Tor, VPN), открытые PII (телефон, email, IP в bio), количество внешних аккаунтов.
+- **Детекция аномалий** — клоны с похожими username, аномальное число аккаунтов у одного профиля.
+- **Детекция ботов и координированного поведения** — regex-паттерны bot-username, поиск prefix-семей (≥3 аккаунтов с общим 4-буквенным префиксом).
+- **Граф связей** (`link_graph.py`, networkx) — ребра по общим Telegram-группам (вес 1) и доверенным сайтам (вес 2), метрики центральности, мосты, поиск бот-кластеров.
+- **Экспорт security-отчёта** — Markdown с методологией, топ угроз, аномалиями и координированным поведением.
+
+Обновить анализ и открыть граф можно кнопками в шапке вкладки. Для визуализации графа требуется `networkx` (входит в `requirements.txt`).
+
 ## Разделение частей
 
 OSINT-часть отвечает за сбор, хранение и обогащение открытых данных: Telegram, Sherlock, Snoop, цифровой след, отчеты.
 
 AI/NLP-часть отвечает за анализ собранных данных: семантический поиск, гибридное ранжирование, классификацию, обучение модели, метрики и объяснение результатов.
+
+Кибербезопасность-часть отвечает за оценку угроз, OPSEC-профайлинг, детекцию ботов и координированного поведения, граф связей профилей.

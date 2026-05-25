@@ -1,8 +1,10 @@
-sentence-transformers
-scikit-learn
-joblib
-pandas
-Pillow
-matplotlib
-telethon
+numpy>=1.26,<3
+scipy>=1.12,<2
+sentence-transformers>=2.7,<4
+scikit-learn>=1.4,<2
+joblib>=1.4,<2
+pandas>=2.2,<3
+Pillow>=10.3,<12
+matplotlib>=3.9,<4
+telethon>=1.36,<2
 git+https://github.com/sherlock-project/sherlock.git

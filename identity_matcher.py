@@ -33,6 +33,8 @@ FEATURE_NAMES = [
     "source_weight",
     "url_depth_quality",
     "collision_risk",
+    "site_collision_risk",
+    "url_is_search_result",
 ]
 
 PROFESSIONAL_SITE_WEIGHTS = {
@@ -53,6 +55,55 @@ PROFESSIONAL_SITE_WEIGHTS = {
     "vk": 0.45,
     "pinterest": 0.35,
 }
+
+# Per-site username collision risk: probability that same username != same person.
+# Smaller user bases with unique-username policies have lower collision risk.
+SITE_COLLISION_RISK: dict[str, float] = {
+    "github": 0.04,
+    "gitlab": 0.05,
+    "linkedin": 0.08,
+    "stackoverflow": 0.07,
+    "kaggle": 0.07,
+    "habr": 0.10,
+    "behance": 0.09,
+    "dribbble": 0.09,
+    "huggingface": 0.06,
+    "dev_to": 0.10,
+    "artstation": 0.08,
+    "medium": 0.20,
+    "telegram": 0.08,
+    "twitter": 0.18,
+    "x": 0.18,
+    "reddit": 0.22,
+    "youtube": 0.28,
+    "instagram": 0.28,
+    "facebook": 0.30,
+    "vk": 0.25,
+    "tiktok": 0.30,
+    "pinterest": 0.35,
+    "bandcamp": 0.42,
+    "lichess": 0.15,
+    "snapchat": 0.30,
+    "duolingo": 0.32,
+    "rutracker": 0.40,
+    "planetaexcel": 0.50,
+    "radiokot": 0.52,
+    "airliners": 0.60,
+    "javaprogrammingforums": 0.55,
+}
+
+_SEARCH_URL_MARKERS = (
+    "search.php",
+    "/search/",
+    "search?",
+    "searchpage",
+    "q=",
+    "query=",
+    "keywords=",
+    "terms=all",
+    "find_user",
+    "lookup?",
+)
 
 SOURCE_WEIGHTS = {
     "sherlock": 0.65,
@@ -129,6 +180,16 @@ def _site_weight(site_name: str, profile_url: str) -> float:
     return PROFESSIONAL_SITE_WEIGHTS.get(site, 0.50)
 
 
+def _site_collision_risk(site_name: str, profile_url: str) -> float:
+    site = normalize_identifier(site_name) or _site_from_url(profile_url)
+    return SITE_COLLISION_RISK.get(site, 0.35)
+
+
+def _url_is_search_result(profile_url: str) -> float:
+    url_lower = (profile_url or "").lower()
+    return 1.0 if any(marker in url_lower for marker in _SEARCH_URL_MARKERS) else 0.0
+
+
 def _source_weight(source: str) -> float:
     return SOURCE_WEIGHTS.get(normalize_identifier(source), 0.55)
 
@@ -203,6 +264,9 @@ def build_identity_features(profile: dict[str, Any], account: dict[str, Any]) ->
     url_depth = len([part for part in urlparse(profile_url).path.split("/") if part])
     url_depth_quality = 1.0 if 1 <= url_depth <= 3 else 0.45
 
+    site_name = str(account.get("site_name") or "")
+    source = str(account.get("source") or "")
+
     return {
         "username_similarity": round(username_similarity, 4),
         "username_exact": username_exact,
@@ -210,31 +274,39 @@ def build_identity_features(profile: dict[str, Any], account: dict[str, Any]) ->
         "username_length_quality": round(_length_quality(telegram_username), 4),
         "name_similarity": round(name_similarity, 4),
         "bio_url_overlap": round(_bio_url_overlap(profile, account), 4),
-        "professional_site_weight": round(_site_weight(str(account.get("site_name") or ""), profile_url), 4),
-        "source_weight": round(_source_weight(str(account.get("source") or "")), 4),
+        "professional_site_weight": round(_site_weight(site_name, profile_url), 4),
+        "source_weight": round(_source_weight(source), 4),
         "url_depth_quality": url_depth_quality,
         "collision_risk": round(_collision_risk(telegram_username), 4),
+        "site_collision_risk": round(_site_collision_risk(site_name, profile_url), 4),
+        "url_is_search_result": _url_is_search_result(profile_url),
     }
 
 
 def _rule_score(features: dict[str, float]) -> float:
     positive = (
-        features["username_similarity"] * 0.36
-        + features["username_exact"] * 0.16
-        + features["username_contains"] * 0.08
-        + features["username_length_quality"] * 0.08
+        features["username_similarity"] * 0.32
+        + features["username_exact"] * 0.14
+        + features["username_contains"] * 0.06
+        + features["username_length_quality"] * 0.06
         + features["name_similarity"] * 0.08
         + features["bio_url_overlap"] * 0.10
         + features["professional_site_weight"] * 0.07
         + features["source_weight"] * 0.05
         + features["url_depth_quality"] * 0.02
     )
-    penalty = features["collision_risk"] * 0.16
+    penalty = (
+        features["collision_risk"] * 0.12
+        + features["site_collision_risk"] * 0.10
+        + features["url_is_search_result"] * 0.18
+    )
     score = positive - penalty
     if features["username_exact"] and features["professional_site_weight"] >= 0.8:
         score += 0.08
     if features["username_similarity"] < 0.55:
         score -= 0.12
+    if features["url_is_search_result"]:
+        score -= 0.10
     return max(0.0, min(score, 1.0))
 
 
@@ -287,6 +359,7 @@ class IdentityMatcher:
         self.min_roc_auc = min_roc_auc
         self._model = None
         self._feature_names = FEATURE_NAMES
+        self._threshold = 0.5
         self.disabled_reason = ""
         self._load_model()
 
@@ -296,6 +369,11 @@ class IdentityMatcher:
 
     def _load_model(self) -> None:
         if joblib is None or not self.model_path.exists():
+            return
+        try:
+            self.model_path.resolve().relative_to(MODELS_DIR.resolve())
+        except ValueError:
+            self.disabled_reason = "model path escapes models directory — refused to load"
             return
         if self.report_path.exists():
             report = json.loads(self.report_path.read_text(encoding="utf-8"))
@@ -307,8 +385,17 @@ class IdentityMatcher:
                 return
         artifact = joblib.load(self.model_path)
         if isinstance(artifact, dict):
+            stored_features = list(artifact.get("feature_names") or FEATURE_NAMES)
+            if stored_features != FEATURE_NAMES:
+                self.disabled_reason = (
+                    f"trained model disabled: feature schema mismatch "
+                    f"(stored {len(stored_features)} features, current {len(FEATURE_NAMES)}). "
+                    "Re-train with train_identity_matcher.py."
+                )
+                return
             self._model = artifact.get("model")
-            self._feature_names = list(artifact.get("feature_names") or FEATURE_NAMES)
+            self._feature_names = stored_features
+            self._threshold = float(artifact.get("decision_threshold") or 0.5)
         else:
             self._model = artifact
 
@@ -320,8 +407,11 @@ class IdentityMatcher:
             classes = list(getattr(self._model, "classes_", []))
             probabilities = self._model.predict_proba(vector)[0]
             if 1 in classes:
-                return float(probabilities[classes.index(1)]), "trained"
-            return float(max(probabilities)), "trained"
+                raw_prob = float(probabilities[classes.index(1)])
+            else:
+                raw_prob = float(max(probabilities))
+            calibrated = raw_prob / (raw_prob + (1 - raw_prob) * (self._threshold / (1 - self._threshold + 1e-9)))
+            return min(calibrated, 1.0), "trained"
         prediction = float(self._model.predict(vector)[0])
         return max(0.0, min(prediction, 1.0)), "trained"
 

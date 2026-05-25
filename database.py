@@ -656,6 +656,8 @@ def get_dashboard_stats() -> dict[str, int]:
                 (SELECT COUNT(*) FROM username_checks WHERE status = 'done') AS completed_checks,
                 (SELECT COUNT(*) FROM enrichment_checks WHERE tool_name = 'snoop' AND status = 'pending') AS queued_snoop_checks,
                 (SELECT COUNT(*) FROM enrichment_checks WHERE tool_name = 'snoop' AND status = 'done') AS completed_snoop_checks,
+                (SELECT COUNT(*) FROM enrichment_checks WHERE tool_name = 'maigret' AND status = 'pending') AS queued_maigret_checks,
+                (SELECT COUNT(*) FROM enrichment_checks WHERE tool_name = 'maigret' AND status = 'done') AS completed_maigret_checks,
                 (SELECT COUNT(*) FROM social_accounts) AS social_accounts
             """
         ).fetchone()
