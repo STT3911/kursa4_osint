@@ -8,3 +8,6 @@ Pillow>=10.3,<12
 matplotlib>=3.9,<4
 telethon>=1.36,<2
 git+https://github.com/sherlock-project/sherlock.git
+maigret>=0.4,<1
+python-telegram-bot==21.*
+networkx>=2.8,<4
