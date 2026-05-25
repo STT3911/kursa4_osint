@@ -7,7 +7,6 @@ from config import env_first, load_env_file
 import database
 from telegram_service import TelegramCollector
 
-
 def build_parser() -> argparse.ArgumentParser:
     load_env_file()
     parser = argparse.ArgumentParser(
@@ -40,7 +39,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Telethon session name.",
     )
     return parser
-
 
 def main() -> int:
     configure_console_output()
@@ -83,7 +81,6 @@ def main() -> int:
         print(f"Parser failed: {exc}", file=sys.stderr)
         return 1
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

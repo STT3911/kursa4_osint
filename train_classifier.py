@@ -23,12 +23,11 @@ try:
     from sklearn.linear_model import LogisticRegression
     from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
     from sklearn.model_selection import train_test_split
-except ImportError as exc:  # pragma: no cover - runtime dependency guard
+except ImportError as exc:
     raise SystemExit(
         "Missing ML dependencies. Install requirements.txt before training: "
         f"{exc}"
     ) from exc
-
 
 def load_rows_from_database() -> list[dict[str, Any]]:
     database.init_db()
@@ -60,7 +59,6 @@ def load_rows_from_database() -> list[dict[str, Any]]:
             ]
     return []
 
-
 def prepare_training_rows(rows: list[dict[str, Any]], min_confidence: float) -> list[dict[str, Any]]:
     prepared = []
     for row in rows:
@@ -75,7 +73,6 @@ def prepare_training_rows(rows: list[dict[str, Any]], min_confidence: float) -> 
         item["training_text"] = text
         prepared.append(item)
     return prepared
-
 
 def build_report(
     rows: list[dict[str, Any]],
@@ -116,7 +113,6 @@ def build_report(
             for row in rows[:15]
         ],
     }
-
 
 def train_classifier(args: argparse.Namespace) -> dict[str, Any]:
     rows = prepare_training_rows(load_rows_from_database(), args.min_confidence)
@@ -183,7 +179,6 @@ def train_classifier(args: argparse.Namespace) -> dict[str, Any]:
     REPORT_PATH.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     return report
 
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Train AI profile classifier on sentence-transformer embeddings."
@@ -199,7 +194,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     return parser
 
-
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
@@ -214,7 +208,6 @@ def main() -> int:
     for label, count in sorted(report["class_distribution"].items()):
         print(f"  {label}: {count}")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

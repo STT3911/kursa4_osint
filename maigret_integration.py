@@ -14,9 +14,9 @@ import database
 _USERNAME_RE = re.compile(r"^[\w\-\.]{1,64}$")
 _MAX_RESULTS = 500
 
-# Статусы, при которых аккаунт считается найденным
 _CLAIMED_STATUSES = {"claimed", "found", "exists", "true"}
 
+_MAIGRET_AVAILABLE: bool | None = None
 
 def _sanitize_username(username: str) -> str:
     username = (username or "").strip().lstrip("@")
@@ -24,17 +24,19 @@ def _sanitize_username(username: str) -> str:
         raise ValueError(f"Invalid username format: {username!r}")
     return username
 
-
 def is_maigret_available() -> bool:
+    global _MAIGRET_AVAILABLE
+    if _MAIGRET_AVAILABLE is not None:
+        return _MAIGRET_AVAILABLE
     try:
         result = subprocess.run(
             [sys.executable, "-m", "maigret", "--version"],
             capture_output=True, text=True, timeout=10, check=False,
         )
-        return result.returncode in (0, 1)
+        _MAIGRET_AVAILABLE = result.returncode in (0, 1)
     except Exception:
-        return False
-
+        _MAIGRET_AVAILABLE = False
+    return _MAIGRET_AVAILABLE
 
 def _parse_maigret_json(json_path: Path, username: str) -> list[dict[str, str]]:
     """Разбирает JSON-отчёт maigret формата simple."""
@@ -47,7 +49,6 @@ def _parse_maigret_json(json_path: Path, username: str) -> list[dict[str, str]]:
         return []
 
     accounts: list[dict[str, str]] = []
-    # Верхний ключ — username, значение — dict site_name → info
     for _uname, sites in data.items():
         if not isinstance(sites, dict):
             continue
@@ -75,7 +76,6 @@ def _parse_maigret_json(json_path: Path, username: str) -> list[dict[str, str]]:
                 break
 
     return accounts
-
 
 def run_maigret(username: str, timeout: int = 120, top_sites: int = 500) -> list[dict[str, str]]:
     """Запускает maigret и возвращает список найденных аккаунтов."""
@@ -108,7 +108,6 @@ def run_maigret(username: str, timeout: int = 120, top_sites: int = 500) -> list
             check=False,
         )
 
-        # JSON-файл называется <username>.json или report_<username>.json
         json_candidates = list(outdir.glob("*.json"))
         accounts: list[dict[str, str]] = []
         for json_file in json_candidates:
@@ -123,13 +122,11 @@ def run_maigret(username: str, timeout: int = 120, top_sites: int = 500) -> list
         return accounts
 
     finally:
-        # Удаляем временную папку
         try:
             import shutil
             shutil.rmtree(outdir, ignore_errors=True)
         except OSError:
             pass
-
 
 def process_maigret_check(user_id: int, username: str, timeout: int = 120) -> dict:
     """Обёртка для воркера: запускает maigret, сохраняет результаты в БД."""

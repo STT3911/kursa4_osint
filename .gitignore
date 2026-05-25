@@ -36,6 +36,9 @@ tools/
 .smoke_check/
 .smoke_identity/
 
+# === Runtime files ===
+.bot.pid
+
 # === Claude Code ===
 .claude/
 

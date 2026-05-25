@@ -10,12 +10,11 @@ from urllib.parse import urlparse
 
 try:
     import joblib
-except ImportError as exc:  # pragma: no cover - runtime dependency guard
+except ImportError as exc:
     joblib = None
     JOBLIB_ERROR = exc
 else:
     JOBLIB_ERROR = None
-
 
 BASE_DIR = Path(__file__).resolve().parent
 MODELS_DIR = BASE_DIR / "models"
@@ -56,8 +55,6 @@ PROFESSIONAL_SITE_WEIGHTS = {
     "pinterest": 0.35,
 }
 
-# Per-site username collision risk: probability that same username != same person.
-# Smaller user bases with unique-username policies have lower collision risk.
 SITE_COLLISION_RISK: dict[str, float] = {
     "github": 0.04,
     "gitlab": 0.05,
@@ -125,7 +122,6 @@ GENERIC_USERNAMES = {
     "root",
 }
 
-
 def normalize_identifier(value: str) -> str:
     value = (value or "").strip().lower()
     value = value.removeprefix("@")
@@ -133,10 +129,8 @@ def normalize_identifier(value: str) -> str:
     value = re.sub(r"[^a-z0-9а-яё_ .+-]+", "", value, flags=re.IGNORECASE)
     return value.strip(" /")
 
-
 def compact_identifier(value: str) -> str:
     return re.sub(r"[^a-z0-9а-яё]+", "", normalize_identifier(value), flags=re.IGNORECASE)
-
 
 def tokenize(value: str) -> set[str]:
     return {
@@ -145,14 +139,12 @@ def tokenize(value: str) -> set[str]:
         if len(token) >= 3
     }
 
-
 def _similarity(left: str, right: str) -> float:
     left = compact_identifier(left)
     right = compact_identifier(right)
     if not left or not right:
         return 0.0
     return SequenceMatcher(None, left, right).ratio()
-
 
 def _extract_username_from_url(profile_url: str) -> str:
     parsed = urlparse(profile_url or "")
@@ -166,7 +158,6 @@ def _extract_username_from_url(profile_url: str) -> str:
             return clean
     return normalize_identifier(path_parts[-1])
 
-
 def _site_from_url(profile_url: str) -> str:
     host = (urlparse(profile_url or "").netloc or "").lower()
     host = host.removeprefix("www.")
@@ -174,25 +165,20 @@ def _site_from_url(profile_url: str) -> str:
         return ""
     return host.split(".")[0]
 
-
 def _site_weight(site_name: str, profile_url: str) -> float:
     site = normalize_identifier(site_name) or _site_from_url(profile_url)
     return PROFESSIONAL_SITE_WEIGHTS.get(site, 0.50)
-
 
 def _site_collision_risk(site_name: str, profile_url: str) -> float:
     site = normalize_identifier(site_name) or _site_from_url(profile_url)
     return SITE_COLLISION_RISK.get(site, 0.35)
 
-
 def _url_is_search_result(profile_url: str) -> float:
     url_lower = (profile_url or "").lower()
     return 1.0 if any(marker in url_lower for marker in _SEARCH_URL_MARKERS) else 0.0
 
-
 def _source_weight(source: str) -> float:
     return SOURCE_WEIGHTS.get(normalize_identifier(source), 0.55)
-
 
 def _length_quality(username: str) -> float:
     username = compact_identifier(username)
@@ -206,7 +192,6 @@ def _length_quality(username: str) -> float:
     if length <= 24:
         return 0.75
     return 0.50
-
 
 def _collision_risk(username: str) -> float:
     normalized = compact_identifier(username)
@@ -223,7 +208,6 @@ def _collision_risk(username: str) -> float:
         return 0.70
     return 0.20
 
-
 def _bio_url_overlap(profile: dict[str, Any], account: dict[str, Any]) -> float:
     bio_tokens = tokenize(str(profile.get("bio") or ""))
     if not bio_tokens:
@@ -237,7 +221,6 @@ def _bio_url_overlap(profile: dict[str, Any], account: dict[str, Any]) -> float:
         return 0.0
     overlap = bio_tokens & external_tokens
     return min(len(overlap) / min(len(bio_tokens), 8), 1.0)
-
 
 def build_identity_features(profile: dict[str, Any], account: dict[str, Any]) -> dict[str, float]:
     telegram_username = normalize_identifier(str(profile.get("username") or ""))
@@ -282,7 +265,6 @@ def build_identity_features(profile: dict[str, Any], account: dict[str, Any]) ->
         "url_is_search_result": _url_is_search_result(profile_url),
     }
 
-
 def _rule_score(features: dict[str, float]) -> float:
     positive = (
         features["username_similarity"] * 0.32
@@ -309,7 +291,6 @@ def _rule_score(features: dict[str, float]) -> float:
         score -= 0.10
     return max(0.0, min(score, 1.0))
 
-
 def _verdict(score: float) -> str:
     if score >= 0.75:
         return "likely_same_person"
@@ -317,14 +298,12 @@ def _verdict(score: float) -> str:
         return "possible_same_person"
     return "unlikely_same_person"
 
-
 def _risk_label(score: float) -> str:
     if score >= 0.75:
         return "low_false_positive_risk"
     if score >= 0.55:
         return "medium_false_positive_risk"
     return "high_false_positive_risk"
-
 
 def _explain(features: dict[str, float], score: float) -> str:
     reasons: list[str] = []
@@ -345,7 +324,6 @@ def _explain(features: dict[str, float], score: float) -> str:
     if not reasons:
         reasons.append("not enough strong identity evidence")
     return f"{_verdict(score)} ({score:.2f}); " + "; ".join(reasons)
-
 
 class IdentityMatcher:
     def __init__(
@@ -437,12 +415,10 @@ class IdentityMatcher:
             enriched.append(item)
         return sorted(enriched, key=lambda row: row["same_person_score"], reverse=True)
 
-
 def load_identity_report() -> dict[str, Any] | None:
     if not IDENTITY_REPORT_PATH.exists():
         return None
     return json.loads(IDENTITY_REPORT_PATH.read_text(encoding="utf-8"))
-
 
 def sigmoid(value: float) -> float:
     return 1.0 / (1.0 + math.exp(-value))

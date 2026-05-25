@@ -9,11 +9,9 @@ from pathlib import Path
 
 import database
 
-
 SHERLOCK_OUTPUT_DIR = database.RUNTIME_DIR / "sherlock_output"
 
 _USERNAME_RE = re.compile(r"^[\w\-\.]{1,64}$")
-
 
 def _sanitize_username(username: str) -> str:
     username = (username or "").strip().lstrip("@")
@@ -21,18 +19,16 @@ def _sanitize_username(username: str) -> str:
         raise ValueError(f"Invalid username format: {username!r}")
     return username
 
-
 def find_sherlock_command() -> list[str] | None:
     binary = shutil.which("sherlock")
     if binary:
         return [binary]
 
     try:
-        import sherlock_project  # noqa: F401
+        import sherlock_project
     except ImportError:
         return None
     return [sys.executable, "-m", "sherlock_project"]
-
 
 def _sherlock_supports_local() -> bool:
     command = find_sherlock_command()
@@ -50,14 +46,11 @@ def _sherlock_supports_local() -> bool:
     except Exception:
         return False
 
-
 def is_sherlock_available() -> bool:
     return find_sherlock_command() is not None
 
-
-_MAX_CSV_BYTES = 8 * 1024 * 1024  # 8 MB guard against oversized output
+_MAX_CSV_BYTES = 8 * 1024 * 1024
 _MAX_CSV_ROWS = 5_000
-
 
 def _parse_csv_output(csv_path: Path, username: str) -> list[dict[str, str]]:
     if csv_path.stat().st_size > _MAX_CSV_BYTES:
@@ -97,7 +90,6 @@ def _parse_csv_output(csv_path: Path, username: str) -> list[dict[str, str]]:
                 )
     return accounts
 
-
 def _parse_stdout(stdout_text: str, username: str) -> list[dict[str, str]]:
     accounts: list[dict[str, str]] = []
     pattern = re.compile(
@@ -119,7 +111,6 @@ def _parse_stdout(stdout_text: str, username: str) -> list[dict[str, str]]:
             }
         )
     return accounts
-
 
 def run_sherlock(username: str, timeout: int = 60) -> list[dict[str, str]]:
     command = find_sherlock_command()
@@ -192,7 +183,6 @@ def run_sherlock(username: str, timeout: int = 60) -> list[dict[str, str]]:
                 temp_output_path.unlink()
         except OSError:
             pass
-
 
 def process_username_check(user_id: int, username: str, timeout: int = 60) -> dict:
     username = (username or "").strip().lstrip("@")

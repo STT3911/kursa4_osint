@@ -33,18 +33,16 @@ try:
         roc_auc_score,
     )
     from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
-except ImportError as exc:  # pragma: no cover - runtime dependency guard
+except ImportError as exc:
     raise SystemExit(
         "Missing ML dependencies. Install requirements.txt before training: "
         f"{exc}"
     ) from exc
 
-
 DEFAULT_LABELS_PATH = Path("identity_pairs.csv")
 
 POSITIVE_VALUES = {"1", "true", "yes", "same", "same_person", "match", "тот", "да"}
 NEGATIVE_VALUES = {"0", "false", "no", "different", "not_same", "mismatch", "чужой", "нет"}
-
 
 def _label_to_int(value: str) -> int | None:
     normalized = (value or "").strip().lower()
@@ -54,7 +52,6 @@ def _label_to_int(value: str) -> int | None:
         return 0
     return None
 
-
 def _row_profile(row: dict[str, str]) -> dict[str, Any]:
     return {
         "user_id": row.get("user_id", ""),
@@ -62,7 +59,6 @@ def _row_profile(row: dict[str, str]) -> dict[str, Any]:
         "username": row.get("telegram_username") or row.get("username", ""),
         "bio": row.get("telegram_bio") or row.get("bio", ""),
     }
-
 
 def _row_account(row: dict[str, str]) -> dict[str, Any]:
     return {
@@ -74,7 +70,6 @@ def _row_account(row: dict[str, str]) -> dict[str, Any]:
         "bio": row.get("account_bio") or row.get("external_bio", ""),
         "description": row.get("description", ""),
     }
-
 
 def load_labeled_pairs(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
@@ -104,7 +99,6 @@ def load_labeled_pairs(path: Path) -> list[dict[str, Any]]:
                 }
             )
     return rows
-
 
 def export_candidates(path: Path) -> Path:
     database.init_db()
@@ -164,7 +158,6 @@ def export_candidates(path: Path) -> Path:
             )
     return path
 
-
 def _find_optimal_threshold(y_test: list[int], y_prob: list[float]) -> float:
     best_f1 = -1.0
     best_thresh = 0.5
@@ -175,7 +168,6 @@ def _find_optimal_threshold(y_test: list[int], y_prob: list[float]) -> float:
             best_f1 = f1
             best_thresh = thresh
     return best_thresh
-
 
 def _build_report(
     rows: list[dict[str, Any]],
@@ -235,7 +227,6 @@ def _build_report(
     if cv_scores:
         report["cross_validation"] = cv_scores
     return report
-
 
 def train(args: argparse.Namespace) -> dict[str, Any]:
     rows = load_labeled_pairs(args.labels)
@@ -331,7 +322,6 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
     IDENTITY_REPORT_PATH.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     return report
 
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train same-person identity matcher.")
     parser.add_argument("--labels", type=Path, default=DEFAULT_LABELS_PATH)
@@ -345,7 +335,6 @@ def build_parser() -> argparse.ArgumentParser:
         default="gradient_boosting",
     )
     return parser
-
 
 def main() -> int:
     args = build_parser().parse_args()
@@ -375,7 +364,6 @@ def main() -> int:
     for label, count in sorted(report["class_distribution"].items()):
         print(f"  {label}: {count}")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

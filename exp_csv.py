@@ -3,7 +3,6 @@ import argparse
 from console_utils import configure_console_output
 import database
 
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Export OSINT datasets to CSV.")
     parser.add_argument(
@@ -12,7 +11,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Export only the baseline NLP dataset.",
     )
     return parser
-
 
 def main() -> int:
     configure_console_output()
@@ -28,7 +26,6 @@ def main() -> int:
         print(f"Enriched dataset exported to {enriched}")
         print(f"OSINT report exported to {report}")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

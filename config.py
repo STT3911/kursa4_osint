@@ -3,11 +3,9 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-
 BASE_DIR = Path(__file__).resolve().parent
 ENV_PATH = BASE_DIR / ".env"
 _ENV_LOADED = False
-
 
 def load_env_file(path: Path | None = None, override: bool = False) -> None:
     global _ENV_LOADED
@@ -27,7 +25,6 @@ def load_env_file(path: Path | None = None, override: bool = False) -> None:
         value = value.strip().strip('"').strip("'")
         if key and (override or key not in os.environ):
             os.environ[key] = value
-
 
 def env_first(*names: str) -> str:
     load_env_file()

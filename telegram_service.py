@@ -23,14 +23,12 @@ else:
 
 EventCallback = Callable[[dict], None] | None
 
-
 @dataclass
 class CollectionStats:
     new_profiles: int = 0
     existing_profiles: int = 0
     queued_usernames: int = 0
     skipped_usernames: int = 0
-
 
 class TelegramCollector:
     def __init__(

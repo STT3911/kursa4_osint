@@ -1,7 +1,6 @@
 from console_utils import configure_console_output
 import database
 
-
 def main() -> int:
     configure_console_output()
     rows = database.list_user_connections()
@@ -16,7 +15,6 @@ def main() -> int:
         print(f"Collected at: {row['parsed_at']}")
         print("-" * 50)
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

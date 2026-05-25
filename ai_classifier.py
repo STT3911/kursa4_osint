@@ -8,7 +8,7 @@ from typing import Any
 
 try:
     import joblib
-except ImportError as exc:  # pragma: no cover - runtime dependency guard
+except ImportError as exc:
     joblib = None
     JOBLIB_ERROR = exc
 else:
@@ -94,7 +94,6 @@ PROFILE_KEYWORDS = {
     },
 }
 
-
 def normalize_username(value: str) -> str:
     value = (value or "").strip()
     value = value.removeprefix("@")
@@ -103,7 +102,6 @@ def normalize_username(value: str) -> str:
             value = value[len(prefix) :]
             break
     return value.strip("/ ")
-
 
 def profile_text(row: dict[str, Any]) -> str:
     fields = (
@@ -116,10 +114,8 @@ def profile_text(row: dict[str, Any]) -> str:
     )
     return " ".join(str(row.get(field) or "") for field in fields).strip()
 
-
 def tokenize(text: str) -> list[str]:
     return re.findall(r"[\w+#.-]+", (text or "").lower(), flags=re.UNICODE)
-
 
 def infer_profile_class(row: dict[str, Any]) -> tuple[str, float, list[str]]:
     text = profile_text(row).lower()
@@ -152,7 +148,6 @@ def infer_profile_class(row: dict[str, Any]) -> tuple[str, float, list[str]]:
     confidence = min(0.95, 0.45 + score * 0.12)
     return label, confidence, sorted(set(matched.get(label, [])))
 
-
 def _format_probability_map(classes: list[str], probabilities: list[float]) -> dict[str, float]:
     return {
         label: round(float(probability), 4)
@@ -162,7 +157,6 @@ def _format_probability_map(classes: list[str], probabilities: list[float]) -> d
             reverse=True,
         )
     }
-
 
 class ProfileClassifier:
     def __init__(
@@ -264,7 +258,6 @@ class ProfileClassifier:
             f"{label} ({confidence:.2f}, {source}); "
             + "; ".join(evidence)
         )
-
 
 def load_training_report() -> dict[str, Any] | None:
     if not REPORT_PATH.exists():

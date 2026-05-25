@@ -23,10 +23,9 @@ from telegram_service import TelegramCollector
 
 try:
     from PIL import Image, ImageTk
-except ImportError:  # pragma: no cover - runtime dependency guard
+except ImportError:
     Image = None
     ImageTk = None
-
 
 class OSINTApp(tk.Tk):
     def __init__(self) -> None:
@@ -411,9 +410,18 @@ class OSINTApp(tk.Tk):
 
     @staticmethod
     def _build_tools_status() -> str:
-        sherlock_state = "available" if is_sherlock_available() else "not installed"
-        snoop_state = "available" if is_snoop_available() else "not installed"
-        maigret_state = "available" if is_maigret_available() else "not installed"
+        try:
+            sherlock_state = "available" if is_sherlock_available() else "not installed"
+        except Exception:
+            sherlock_state = "error"
+        try:
+            snoop_state = "available" if is_snoop_available() else "not installed"
+        except Exception:
+            snoop_state = "error"
+        try:
+            maigret_state = "available" if is_maigret_available() else "not installed"
+        except Exception:
+            maigret_state = "error"
         return f"Sherlock: {sherlock_state} | Snoop: {snoop_state} | Maigret: {maigret_state}"
 
     def refresh_dashboard(self) -> None:
@@ -1391,7 +1399,7 @@ class OSINTApp(tk.Tk):
 
         risk_lines = []
         for level, count in sorted(snapshot["risk_distribution"].items()):
-            bar = "█" * min(count, 40)
+            bar = "" * min(count, 40)
             risk_lines.append(f"{level:12s} {count:4d}  {bar}")
         self.risk_dist_box.configure(state="normal")
         self.risk_dist_box.delete("1.0", "end")
@@ -1400,7 +1408,7 @@ class OSINTApp(tk.Tk):
 
         opsec_lines = []
         for bucket, count in snapshot["opsec_distribution"].items():
-            bar = "█" * min(count, 40)
+            bar = "" * min(count, 40)
             opsec_lines.append(f"{bucket:22s} {count:4d}  {bar}")
         self.opsec_dist_box.configure(state="normal")
         self.opsec_dist_box.delete("1.0", "end")
@@ -1519,12 +1527,10 @@ class OSINTApp(tk.Tk):
         self.maigret_queue.put(None)
         self.destroy()
 
-
 def main() -> int:
     app = OSINTApp()
     app.mainloop()
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())
