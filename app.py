@@ -529,13 +529,34 @@ class OSINTApp(tk.Tk):
             return None
         return self.osint_profile_cache.get(selected[0])
 
-    def open_selected_osint_profile(self, _event: object = None) -> None:
+    def open_selected_osint_profile(self, event: object = None) -> None:
+        if event is not None and hasattr(event, "y"):
+            row_id = self.osint_profiles_tree.identify_row(event.y)
+            if row_id:
+                self.osint_profiles_tree.selection_set(row_id)
         profile = self._get_selected_osint_profile()
         if profile is None:
             return
         self.last_search_terms = []
         self.last_search_query = ""
         self.show_profile_card(int(profile["user_id"]))
+        self.notebook.select(self.profile_tab)
+
+    def _open_threat_profile(self, event: object = None) -> None:
+        if event is not None and hasattr(event, "y"):
+            row_id = self.threat_tree.identify_row(event.y)
+            if row_id:
+                self.threat_tree.selection_set(row_id)
+        selected = self.threat_tree.selection()
+        if not selected:
+            return
+        try:
+            user_id = int(selected[0])
+        except (ValueError, IndexError):
+            return
+        self.last_search_terms = []
+        self.last_search_query = ""
+        self.show_profile_card(user_id)
         self.notebook.select(self.profile_tab)
 
     def export_selected_profile_report(self) -> None:
@@ -975,7 +996,11 @@ class OSINTApp(tk.Tk):
         else:
             self._append_log("Поиск не дал результатов.")
 
-    def open_selected_profile(self, _event: object = None) -> None:
+    def open_selected_profile(self, event: object = None) -> None:
+        if event is not None and hasattr(event, "y"):
+            row_id = self.results_tree.identify_row(event.y)
+            if row_id:
+                self.results_tree.selection_set(row_id)
         selected = self.results_tree.selection()
         if not selected:
             return
@@ -1199,8 +1224,15 @@ class OSINTApp(tk.Tk):
             self.current_avatar = None
             return
 
-        image = Image.open(absolute_path)
-        image.thumbnail((220, 220))
+        try:
+            with Image.open(absolute_path) as opened:
+                image = opened.convert("RGB")
+                image.thumbnail((220, 220))
+        except (OSError, ValueError):
+            self.avatar_label.configure(image="", text="Аватар повреждён")
+            self.current_avatar = None
+            return
+
         self.current_avatar = ImageTk.PhotoImage(image)
         self.avatar_label.configure(image=self.current_avatar, text="")
 
@@ -1309,6 +1341,7 @@ class OSINTApp(tk.Tk):
         self.threat_tree.tag_configure("high", background="#ffd5d5")
         self.threat_tree.tag_configure("medium", background="#fff3cc")
         self.threat_tree.tag_configure("analyst", background="#d5eaff")
+        self.threat_tree.bind("<Double-1>", self._open_threat_profile)
 
         ttk.Label(left, text="Аномалии в наборе данных").pack(anchor="w", pady=(8, 0))
         self.anomaly_box = ScrolledText(left, height=8, wrap="word")
@@ -1385,6 +1418,7 @@ class OSINTApp(tk.Tk):
             self.threat_tree.insert(
                 "",
                 "end",
+                iid=str(t["user_id"]),
                 values=(
                     t["risk_level"],
                     t["opsec_score"],

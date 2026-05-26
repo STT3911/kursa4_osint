@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import csv
+import re
 import sqlite3
 import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable
+from urllib.parse import urlparse
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "osint_database.db"
@@ -22,9 +24,47 @@ ACTIVE_DB_URI = False
 DB_READY = False
 MEMORY_DB_URI = "file:osint_runtime?mode=memory&cache=shared"
 MEMORY_KEEPALIVE: sqlite3.Connection | None = None
+_AVATAR_NAME_RE = re.compile(r"^\d+\.(?:jpg|jpeg|png|webp)$", re.IGNORECASE)
+_ALLOWED_SOCIAL_SCHEMES = {"http", "https"}
 
 def utcnow_text() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def find_existing_avatar_path(user_id: int) -> str:
+    for suffix in (".jpg", ".jpeg", ".png", ".webp"):
+        candidate = AVATARS_DIR / f"{int(user_id)}{suffix}"
+        if candidate.is_file() and candidate.stat().st_size > 0:
+            return (Path("avatars") / candidate.name).as_posix()
+    return ""
+
+def normalize_avatar_path(user_id: int, photo_path: str | None) -> str:
+    value = (photo_path or "").strip().replace("\\", "/")
+    if value:
+        relative = Path(value)
+        if relative.is_absolute() or ".." in relative.parts:
+            return ""
+        if len(relative.parts) == 2 and relative.parts[0] == "avatars" and _AVATAR_NAME_RE.match(relative.name):
+            absolute = (BASE_DIR / relative).resolve()
+            try:
+                absolute.relative_to(AVATARS_DIR.resolve())
+            except ValueError:
+                return ""
+            if absolute.is_file() and absolute.stat().st_size > 0:
+                return relative.as_posix()
+    return find_existing_avatar_path(user_id)
+
+def _is_safe_profile_url(value: str) -> bool:
+    if len(value) > 2048 or any(ch in value for ch in "\r\n\t"):
+        return False
+    parsed = urlparse(value)
+    if parsed.scheme.lower() not in _ALLOWED_SOCIAL_SCHEMES:
+        return False
+    if not parsed.netloc or parsed.username or parsed.password:
+        return False
+    hostname = parsed.hostname
+    if not hostname or hostname in {"localhost", "127.0.0.1", "::1"}:
+        return False
+    return True
 
 def get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(ACTIVE_DB_PATH, timeout=30, uri=ACTIVE_DB_URI)
@@ -341,6 +381,7 @@ def save_profile(
     photo_path: str | None,
 ) -> None:
     init_db()
+    safe_photo_path = normalize_avatar_path(user_id, photo_path)
     with get_connection() as conn:
         conn.execute(
             """
@@ -368,7 +409,7 @@ def save_profile(
                     ELSE excluded.photo_path
                 END
             """,
-            (user_id, first_name or "", username or "", bio or "", photo_path or ""),
+            (user_id, first_name or "", username or "", bio or "", safe_photo_path),
         )
         if first_name and first_name.strip():
             conn.execute(
@@ -450,7 +491,6 @@ def queue_username_check_if_needed(user_id: int, username: str) -> bool:
         should_queue = (
             row is None
             or row["username"] != username
-            or row["status"] in {"error", "skipped"}
         )
         if not should_queue:
             return False
@@ -546,7 +586,6 @@ def queue_enrichment_check_if_needed(user_id: int, username: str, tool_name: str
         should_queue = (
             row is None
             or row["username"] != username
-            or row["status"] in {"error", "skipped"}
         )
         if not should_queue:
             return False
@@ -640,7 +679,7 @@ def save_social_accounts(
     for account in accounts:
         site_name = (account.get("site_name") or "").strip()
         profile_url = (account.get("profile_url") or "").strip()
-        if not site_name or not profile_url:
+        if not site_name or len(site_name) > 120 or not profile_url or not _is_safe_profile_url(profile_url):
             continue
         unique_accounts[(site_name.lower(), profile_url)] = {
             "site_name": site_name,
@@ -964,6 +1003,20 @@ def list_user_connections() -> list[dict]:
         ).fetchall()
     return [dict(row) for row in rows]
 
+def _ensure_social_account_reviews_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS social_account_reviews (
+            account_id INTEGER PRIMARY KEY,
+            review_status TEXT NOT NULL DEFAULT 'pending',
+            review_note TEXT,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.commit()
+
+
 def get_profile_card(user_id: int) -> dict:
     init_db()
     from identity_matcher import IdentityMatcher
@@ -1007,6 +1060,10 @@ def get_profile_card(user_id: int) -> dict:
         ).fetchall()
 
     profile = dict(profile_row)
+    safe_photo_path = normalize_avatar_path(user_id, profile.get("photo_path"))
+    if safe_photo_path and safe_photo_path != profile.get("photo_path"):
+        profile["photo_path"] = safe_photo_path
+        profile["has_photo"] = 1
     matcher = IdentityMatcher()
     social_accounts = matcher.match_many(profile, [dict(row) for row in social_rows])
     for account in social_accounts:

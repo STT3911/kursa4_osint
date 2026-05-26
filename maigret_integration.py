@@ -8,6 +8,7 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import Any
+import csv
 
 import database
 
@@ -48,14 +49,23 @@ def _parse_maigret_json(json_path: Path, username: str) -> list[dict[str, str]]:
         return []
 
     accounts: list[dict[str, str]] = []
-    for _uname, sites in data.items():
-        if not isinstance(sites, dict):
-            continue
+    roots: list[dict[str, Any]]
+    if all(isinstance(value, dict) and ("status" in value or "url" in value or "url_user" in value) for value in data.values()):
+        roots = [data]
+    else:
+        roots = [sites for sites in data.values() if isinstance(sites, dict)]
+
+    for sites in roots:
         for site_name, info in sites.items():
             if not isinstance(info, dict):
                 continue
             status = info.get("status") or {}
-            status_id = str(status.get("id") or "").lower()
+            if isinstance(status, str):
+                status_id = status.lower()
+            elif isinstance(status, dict):
+                status_id = str(status.get("id") or status.get("status") or "").lower()
+            else:
+                status_id = ""
             if status_id not in _CLAIMED_STATUSES:
                 continue
             url = (
@@ -76,13 +86,37 @@ def _parse_maigret_json(json_path: Path, username: str) -> list[dict[str, str]]:
 
     return accounts
 
+def parse_maigret_json(json_path: Path, username: str) -> list[dict[str, str]]:
+    return _parse_maigret_json(json_path, username)
+
+def parse_maigret_csv(csv_path: Path, username: str) -> list[dict[str, str]]:
+    if not csv_path.exists() or csv_path.stat().st_size > 8 * 1024 * 1024:
+        return []
+    accounts: list[dict[str, str]] = []
+    with csv_path.open("r", newline="", encoding="utf-8-sig", errors="replace") as file_obj:
+        reader = csv.DictReader(file_obj)
+        for row in reader:
+            status = str(row.get("exists") or row.get("status") or "").strip().lower()
+            if status not in _CLAIMED_STATUSES:
+                continue
+            site_name = str(row.get("name") or row.get("site") or "").strip()
+            url = str(row.get("url_user") or row.get("url") or row.get("profile_url") or "").strip()
+            if not site_name or not url.startswith(("http://", "https://")):
+                continue
+            accounts.append({"site_name": site_name, "profile_url": url, "username": username})
+            if len(accounts) >= _MAX_RESULTS:
+                break
+    return accounts
+
 def run_maigret(username: str, timeout: int = 120, top_sites: int = 500) -> list[dict[str, str]]:
     username = _sanitize_username(username)
 
     outdir = Path(tempfile.mkdtemp(prefix="maigret_"))
     env = os.environ.copy()
-    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONIOENCODING"] = "utf-8:replace"
     env["PYTHONUTF8"] = "1"
+    env["NO_COLOR"] = "1"
+    env["TERM"] = "dumb"
 
     cmd = [
         sys.executable, "-m", "maigret", username,
@@ -149,8 +183,8 @@ def process_maigret_check(user_id: int, username: str, timeout: int = 120) -> di
     except subprocess.TimeoutExpired:
         err = "Maigret timed out"
         database.mark_enrichment_error(user_id, username, "maigret", err)
-        return {"status": "error", "found_count": 0, "message": err}
+        return {"status": "timeout", "found_count": 0, "message": err}
     except Exception as exc:
-        err = f"Maigret check failed ({type(exc).__name__})"
+        err = f"Maigret check failed ({type(exc).__name__}): {exc}"
         database.mark_enrichment_error(user_id, username, "maigret", err)
         return {"status": "error", "found_count": 0, "message": err}

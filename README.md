@@ -1,193 +1,147 @@
-# OSINT + AI Coursework
+# Анализ поведенческих сетевых сессий
 
-Локальная система для учебного анализа открытых данных Telegram-профилей. Проект разделен на две части разработки:
+Проект посвящен идентификации и проверке пользователя по признакам сетевого поведения.
+Основная идея: собрать отдельные сетевые потоки в сессии, извлечь из них устойчивые
+временные и статистические признаки, а затем проверить, насколько эти признаки
+сохраняются при использовании VPN или proxy.
 
-1. **Кибербезопасность и OSINT** - сбор открытых данных, хранение, обогащение внешними аккаунтами, оценка цифрового следа.
-2. **Искусственный интеллект и NLP** - семантический поиск, классификация профилей, проверка принадлежности найденных аккаунтов.
+## Возможности
 
-## Состав проекта
+- разбиение сетевых потоков на сессии по порогу неактивности;
+- расчет признаков на уровне сессий;
+- классификация пользователя по поведенческим признакам;
+- проверка нетипичных сессий для каждого пользователя;
+- оценка качества в нескольких сценариях:
+  - `direct -> vpn`;
+  - `mixed`;
+  - `open-set`;
+- генерация синтетических данных для демонстрационного запуска.
 
-### Часть 1. Кибербезопасность и OSINT
+## Формат входных данных
 
-- сбор открытых Telegram-профилей через `Telethon`;
-- локальная база `SQLite`;
-- сохранение групп, bio, username, аватаров и статусов проверок;
-- username-enrichment через `Sherlock`, опциональный `Snoop` и ручной `Maigret`;
-- расчет `osint_score` и уровня цифрового следа;
-- экспорт CSV и Markdown-отчетов;
-- меры безопасности: `.env`, session-файлы и реальные API-ключи не входят в архив.
+На вход подается CSV-файл с записями сетевых потоков. Обязательные столбцы:
 
-Подробно: [CYBERSECURITY_PART.md](CYBERSECURITY_PART.md).
+- `user_id`
+- `mode`
+- `start_time`
+- `end_time`
+- `duration`
+- `bytes_up`
+- `bytes_down`
+- `pkts_up`
+- `pkts_down`
 
-### Часть 2. Искусственный интеллект и NLP
+Дополнительно можно передать временные и скоростные признаки:
 
-- семантический и гибридный поиск по профилям;
-- fallback-поиск без embedding-модели;
-- AI-классификация профилей по профессиональным направлениям;
-- обученная модель `models/profile_classifier.joblib`;
-- identity matching для оценки, может ли внешний аккаунт принадлежать тому же человеку;
-- обученная модель `models/identity_matcher.joblib`;
-- отчеты с метриками в `models/*.json`.
+- `flow_iat_mean`, `flow_iat_std`, `flow_iat_min`, `flow_iat_max`
+- `fwd_iat_mean`, `fwd_iat_std`, `fwd_iat_min`, `fwd_iat_max`
+- `bwd_iat_mean`, `bwd_iat_std`, `bwd_iat_min`, `bwd_iat_max`
+- `active_mean`, `active_std`, `active_min`, `active_max`
+- `idle_mean`, `idle_std`, `idle_min`, `idle_max`
+- `bytes_per_sec`
+- `pkts_per_sec`
 
-Подробно: [AI_PART.md](AI_PART.md).
-
-## Основные файлы
-
-- `app.py` - основной desktop-интерфейс.
-- `streamlit_app.py` - демонстрационная веб-витрина для защиты.
-- `telegram_service.py` - Telegram-сбор и realtime-проверка профилей.
-- `database.py` - SQLite-схема, аналитика, экспорт и карточки профилей.
-- `sherlock_integration.py` - запуск Sherlock.
-- `snoop_integration.py` - опциональный запуск Snoop.
-- `maigret_integration.py` - ручная углубленная проверка Maigret.
-- `nlp_search_engine.py` - семантический и гибридный поиск.
-- `ai_classifier.py` - AI-классификация и fallback-правила.
-- `identity_matcher.py` - модель same-person matching.
-- `train_classifier.py` - обучение классификатора профилей.
-- `train_identity_matcher.py` - обучение модели identity matching.
-- `auto_label_identity_pairs.py` - weak-разметка пар для identity matching.
+Если дополнительных столбцов нет, пайплайн использует базовые признаки,
+которые можно получить из обязательных полей.
 
 ## Установка
 
 ```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
-> **Важно:** всегда запускать через `.venv\Scripts\python.exe`, иначе Sherlock и Snoop не найдут свои зависимости.
-
-Для работы Telegram-сбора нужны переменные окружения:
+Для запуска с CatBoost можно дополнительно установить:
 
 ```powershell
-$env:TELEGRAM_API_ID="your_api_id"
-$env:TELEGRAM_API_HASH="your_api_hash"
-$env:TELEGRAM_SESSION="osint_session"
+python -m pip install catboost
 ```
 
-Также поддерживаются короткие алиасы `TG_API_ID` и `TG_API_HASH`.
+Если CatBoost не установлен, используется `RandomForestClassifier`.
 
-Можно не задавать переменные вручную, а заполнить локальный файл `.env` в корне проекта:
-
-```env
-TELEGRAM_API_ID=your_api_id
-TELEGRAM_API_HASH=your_api_hash
-TELEGRAM_SESSION=osint_session
-```
-
-В архив и репозиторий `.env` и `*.session` не кладутся.
-
-## Запуск
-
-Desktop-приложение:
+## Демонстрационный запуск
 
 ```powershell
-.\.venv\Scripts\python.exe app.py
+python scripts/run_demo.py --output-dir artifacts/demo
 ```
 
-Веб-витрина:
+Скрипт создаст синтетический набор потоков, построит сессии, обучит модели и
+сохранит результаты в указанную папку.
+
+## Запуск на своем CSV-файле
 
 ```powershell
-.\.venv\Scripts\python.exe -m streamlit run streamlit_app.py --server.port 8502
+python scripts/run_demo.py --input-csv data/flows.csv --output-dir artifacts/real_run
 ```
 
-Обучение моделей:
+Файл должен содержать обязательные столбцы из раздела с форматом входных данных.
+
+## Работа с ISCX VPN-nonVPN
+
+Датасет ISCX VPN-nonVPN можно использовать для задачи бинарного определения
+VPN/non-VPN по временным признакам потоков. В исходных ARFF-файлах нет `user_id`
+и временных меток отдельных потоков, поэтому напрямую измерять точность
+идентификации пользователей на этих данных нельзя.
+
+Поместите ARFF-файлы в папку `data/` и выполните:
 
 ```powershell
-.\.venv\Scripts\python.exe train_classifier.py --download-model
-.\.venv\Scripts\python.exe train_identity_matcher.py --labels identity_pairs.csv
+python scripts/run_iscx_vpn.py --data-dir data --output-dir artifacts/iscx_vpn
 ```
 
-## Проверка
+Скрипт обрабатывает файлы с разными временными окнами, например `15s`, `30s`,
+`60s` и `120s`.
+
+## Прокси-эксперимент на ISCX
+
+Для проверки устойчивости поведенческих признаков на ISCX есть отдельный
+эксперимент. В нем классы приложений (`BROWSING`, `VOIP`, `CHAT` и другие)
+используются как условные поведенческие профили.
+
+Такой запуск не является полноценной идентификацией пользователей, потому что
+в датасете нет реальных идентификаторов людей. Это ограничение фиксируется в
+файле `DISCLAIMER.txt`, который создается рядом с результатами.
 
 ```powershell
-$env:PYTHONDONTWRITEBYTECODE="1"
-.\.venv\Scripts\python.exe -m unittest discover -s tests
+python scripts/run_iscx_userid_proxy.py --input-arff data/TimeBasedFeatures-Dataset-15s.arff --output-dir artifacts/iscx_userid_proxy
 ```
 
-## Передача без GitHub
+## Проверка сохраненной модели
 
-Инструкция по ZIP-архиву лежит в [HANDOFF_WITHOUT_GITHUB.md](HANDOFF_WITHOUT_GITHUB.md).
-
-## Identity matching model
-
-Этот AI-модуль оценивает, принадлежит ли найденный Sherlock/Snoop аккаунт тому же человеку, что и Telegram-профиль. Для каждого внешнего аккаунта считается `same-person score`, verdict и объяснение.
-
-Экспорт кандидатов для ручной разметки:
+После обучения модель можно загрузить и применить к ARFF-файлу без повторного
+обучения:
 
 ```powershell
-.venv\Scripts\python.exe train_identity_matcher.py --export-candidates identity_pairs.csv
+python scripts/predict_iscx_vpn.py --model artifacts/iscx_vpn/15s/model.joblib --input-arff data/TimeBasedFeatures-Dataset-15s.arff --output-csv artifacts/iscx_vpn/manual_test_predictions.csv
 ```
 
-В файле `identity_pairs.csv` нужно заполнить колонку `label`:
+Этот запуск удобен для технической проверки загрузки модели и получения
+предсказаний. Для оценки качества лучше использовать результаты основного
+эксперимента из `artifacts/iscx_vpn/metrics_comparison.csv`.
 
-- `1` — аккаунт принадлежит тому же человеку;
-- `0` — аккаунт принадлежит другому человеку.
+## Результаты
 
-Если ручной разметки мало, можно добавить осторожную weak-разметку:
+При запуске на пользовательских или синтетических данных сохраняются:
 
-```powershell
-.venv\Scripts\python.exe auto_label_identity_pairs.py --input identity_pairs.csv --synthetic-negatives 100
-```
+- `session_features.csv`;
+- `metrics.json`;
+- `predictions_<scenario>.csv`;
+- матрица ошибок;
+- ROC-кривая;
+- сводка изменения качества по сценариям.
 
-Скрипт не перезаписывает ручные метки, делает backup `identity_pairs.csv.bak`, заполняет только уверенные пустые строки и добавляет синтетические отрицательные пары для баланса классов.
+Для ISCX-экспериментов дополнительно сохраняются:
 
-Обучение модели:
+- `metrics_comparison.csv`;
+- `metrics_summary.csv` для каждого временного окна;
+- `predictions.csv`;
+- `feature_importance.csv`;
+- `model.joblib`;
+- преобразованные CSV-снимки исходных ARFF-файлов;
+- графики качества, распределений и важности признаков.
 
-```powershell
-.venv\Scripts\python.exe train_identity_matcher.py --labels identity_pairs.csv
-```
+## Примечания
 
-Артефакты сохраняются в `models/`:
-
-- `identity_matcher.joblib` — модель account matching;
-- `identity_matcher_report.json` — accuracy, precision, recall, F1, ROC-AUC, confusion matrix.
-
-Если обученной модели нет, приложение использует explainable scoring по признакам: сходство username, риск коллизии коротких ников, источник Sherlock/Snoop, тип сайта, пересечение bio и URL.
-
-## Демонстрационный сценарий
-
-1. Запустить `app.py`.
-2. Во вкладке сбора проверить, что Telegram API ID/API Hash подтянулись из env, или ввести их вручную.
-3. Собрать группу или выполнить realtime-проверку одного профиля.
-4. Дождаться проверки Sherlock и, если установлен, Snoop по username.
-5. Открыть карточку профиля: посмотреть Telegram-данные, внешние аккаунты, источники `sherlock`/`snoop`, OSINT-балл и AI-классификацию.
-6. Во вкладке NLP-поиска выполнить запросы `python backend`, `figma designer`, `devops`, `osint analyst`.
-7. Сравнить семантический и гибридный режимы.
-8. Экспортировать enriched dataset, OSINT-report и Markdown-сводку.
-
-## Основные файлы
-
-- `app.py` — основной Tkinter-интерфейс.
-- `telegram_service.py` — сбор групп и realtime-проверка отдельных Telegram-профилей.
-- `sherlock_integration.py` — запуск Sherlock и разбор найденных аккаунтов.
-- `snoop_integration.py` — опциональный запуск Snoop и разбор CSV-отчетов.
-- `database.py` — SQLite-схема, аналитика, отчеты и CSV-экспорт.
-- `nlp_search_engine.py` — семантический и гибридный поиск.
-- `ai_classifier.py` — AI-классификация профилей и fallback-правила.
-- `train_classifier.py` — обучение классификатора и расчет метрик.
-- `identity_matcher.py` — оценка, найден ли аккаунт того же человека или возможная коллизия username.
-- `train_identity_matcher.py` — экспорт пар для разметки и обучение модели same-person matching.
-- `auto_label_identity_pairs.py` — осторожная weak-разметка и генерация синтетических отрицательных пар.
-- `COURSEWORK_STRUCTURE.md` — разделение работы между участниками.
-- `NLP_IMPROVEMENT_BRIEF.md` — описание AI/NLP-части.
-
-## Кибербезопасность
-
-Вкладка **«Кибербезопасность»** реализует:
-
-- **Угрозный профайлинг** — детектирование ключевых слов из категорий `high / medium / analyst` с контекстным окном ±55 символов для подавления ложных срабатываний («защита от фишинга» ≠ фишинг).
-- **OPSEC-балл (0–100)** — оценка цифрового следа: Privacy-инструменты (Tor, VPN), открытые PII (телефон, email, IP в bio), количество внешних аккаунтов.
-- **Детекция аномалий** — клоны с похожими username, аномальное число аккаунтов у одного профиля.
-- **Детекция ботов и координированного поведения** — regex-паттерны bot-username, поиск prefix-семей (≥3 аккаунтов с общим 4-буквенным префиксом).
-- **Граф связей** (`link_graph.py`, networkx) — ребра по общим Telegram-группам (вес 1) и доверенным сайтам (вес 2), метрики центральности, мосты, поиск бот-кластеров.
-- **Экспорт security-отчёта** — Markdown с методологией, топ угроз, аномалиями и координированным поведением.
-
-Обновить анализ и открыть граф можно кнопками в шапке вкладки. Для визуализации графа требуется `networkx` (входит в `requirements.txt`).
-
-## Разделение частей
-
-OSINT-часть отвечает за сбор, хранение и обогащение открытых данных: Telegram, Sherlock, Snoop, цифровой след, отчеты.
-
-AI/NLP-часть отвечает за анализ собранных данных: семантический поиск, гибридное ранжирование, классификацию, обучение модели, метрики и объяснение результатов.
-
-Кибербезопасность-часть отвечает за оценку угроз, OPSEC-профайлинг, детекцию ботов и координированного поведения, граф связей профилей.
+- Порог неактивности для выделения сессий по умолчанию равен 60 минутам.
+- Для сравнения также проверяется разбиение с порогом 30 минут.
+- Каталог `artifacts/` используется для результатов экспериментов и не должен
+  содержать исходные приватные данные.

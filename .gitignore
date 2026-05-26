@@ -1,49 +1,35 @@
-# === Виртуальное окружение ===
 .venv/
-
-# === Python ===
 __pycache__/
 *.py[cod]
 *.pyo
-
-# === Секреты и конфиги окружения ===
 .env
 *.session
-
-# === База данных ===
 *.db
-
-# === Датасеты и пары ===
 identity_pairs.csv
 identity_pairs.csv.bak
 identity_pairs_raw.csv
 auto_label_identity_pairs.py
 nlp_dataset.csv
 osint_report.csv
-
-# === Обученные модели ===
 models/*.joblib
 models/*.json
-
-# === Аватары ===
 avatars/
-
-# === Внешние инструменты (Sherlock, Snoop и т.д.) ===
 tools/
-
-# === Smoke-тесты ===
 .smoke_test_results/
 .smoke_check/
 .smoke_identity/
-
-# === Runtime files ===
 .bot.pid
-
-# === Claude Code ===
 .claude/
-
-# === IDE / OS ===
 .idea/
 .vscode/
 *.DS_Store
 Thumbs.db
+node_modules/
+dist/
+build/
+*.log
+*.tmp
+package.json
+package-lock.json
+pycache_check/
+osint_session.session-journal

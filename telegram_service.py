@@ -48,6 +48,52 @@ class TelegramCollector:
         if callback is not None:
             callback({"type": event_type, **payload})
 
+    async def _download_avatar(self, client: TelegramClient, user: object, event_callback: EventCallback) -> str:
+        if not getattr(user, "photo", None):
+            return ""
+
+        user_id = int(getattr(user, "id"))
+        database.AVATARS_DIR.mkdir(parents=True, exist_ok=True)
+        photo_file = database.AVATARS_DIR / f"{user_id}.jpg"
+        if photo_file.is_file() and photo_file.stat().st_size > 0:
+            return database.normalize_avatar_path(user_id, str(Path("avatars") / photo_file.name))
+        if photo_file.exists() and photo_file.stat().st_size == 0:
+            photo_file.unlink(missing_ok=True)
+
+        try:
+            downloaded = await client.download_profile_photo(user, file=str(photo_file))
+        except FloodWaitError as exc:
+            self._emit(
+                event_callback,
+                "log",
+                message=f"Photo download rate limit reached. Sleeping {exc.seconds}s.",
+            )
+            await asyncio.sleep(exc.seconds)
+            return ""
+        except Exception as exc:
+            self._emit(
+                event_callback,
+                "log",
+                message=f"Photo download failed for {user_id}: {type(exc).__name__}",
+            )
+            return ""
+
+        candidates = [Path(downloaded)] if downloaded else []
+        candidates.append(photo_file)
+        for candidate in candidates:
+            if not candidate.is_absolute():
+                candidate = candidate.resolve()
+            try:
+                candidate.relative_to(database.AVATARS_DIR.resolve())
+            except ValueError:
+                continue
+            if candidate.is_file() and candidate.stat().st_size > 0:
+                return database.normalize_avatar_path(user_id, str(Path("avatars") / candidate.name))
+        for candidate in candidates:
+            if candidate.exists() and candidate.is_file() and candidate.stat().st_size == 0:
+                candidate.unlink(missing_ok=True)
+        return ""
+
     async def collect_profile(
         self,
         target: str,
@@ -92,22 +138,7 @@ class TelegramCollector:
             except Exception:
                 bio = ""
 
-            photo_path = ""
-            if getattr(user, "photo", None):
-                photo_file = database.AVATARS_DIR / f"{user.id}.jpg"
-                photo_path = str(Path("avatars") / f"{user.id}.jpg").replace("\\", "/")
-                if not photo_file.exists():
-                    try:
-                        await client.download_profile_photo(user, file=str(photo_file))
-                    except FloodWaitError as exc:
-                        self._emit(
-                            event_callback,
-                            "log",
-                            message=f"Photo download rate limit reached. Sleeping {exc.seconds}s.",
-                        )
-                        await asyncio.sleep(exc.seconds)
-                    except Exception:
-                        photo_path = ""
+            photo_path = await self._download_avatar(client, user, event_callback)
 
             database.save_profile(
                 user_id=user.id,
@@ -191,12 +222,13 @@ class TelegramCollector:
 
                 if is_existing:
                     stats.existing_profiles += 1
+                    photo_path = await self._download_avatar(client, user, event_callback)
                     database.save_profile(
                         user_id=user.id,
                         first_name=user.first_name,
                         username=user.username,
                         bio="",
-                        photo_path="",
+                        photo_path=photo_path,
                     )
                     database.link_user_group(user.id, group_name)
                     if user.username and database.queue_username_check_if_needed(user.id, user.username):
@@ -235,22 +267,7 @@ class TelegramCollector:
                 except Exception:
                     bio = ""
 
-                photo_path = ""
-                if user.photo:
-                    photo_file = database.AVATARS_DIR / f"{user.id}.jpg"
-                    photo_path = str(Path("avatars") / f"{user.id}.jpg").replace("\\", "/")
-                    if not photo_file.exists():
-                        try:
-                            await client.download_profile_photo(user, file=str(photo_file))
-                        except FloodWaitError as exc:
-                            self._emit(
-                                event_callback,
-                                "log",
-                                message=f"Photo download rate limit reached. Sleeping {exc.seconds}s.",
-                            )
-                            await asyncio.sleep(exc.seconds)
-                        except Exception:
-                            photo_path = ""
+                photo_path = await self._download_avatar(client, user, event_callback)
 
                 database.save_profile(
                     user_id=user.id,

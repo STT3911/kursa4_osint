@@ -11,14 +11,24 @@ from typing import Any
 import database
 from ai_classifier import ProfileClassifier
 
-try:
-    from sentence_transformers import SentenceTransformer, util
-except ImportError as exc:
-    SentenceTransformer = None
-    util = None
-    IMPORT_ERROR = exc
-else:
-    IMPORT_ERROR = None
+SentenceTransformer = None
+util = None
+IMPORT_ERROR = None
+
+def _ensure_sentence_transformers() -> bool:
+    global SentenceTransformer, util, IMPORT_ERROR
+    if SentenceTransformer is not None:
+        return True
+    if IMPORT_ERROR is not None:
+        return False
+    try:
+        from sentence_transformers import SentenceTransformer as _ST, util as _util
+        SentenceTransformer = _ST
+        util = _util
+        return True
+    except ImportError as exc:
+        IMPORT_ERROR = exc
+        return False
 
 class NLPSearchEngine:
     TERM_ALIASES = {
@@ -53,7 +63,7 @@ class NLPSearchEngine:
             self._dirty = True
 
     def _ensure_model(self) -> None:
-        if IMPORT_ERROR is not None:
+        if not _ensure_sentence_transformers():
             self._backend = "lexical"
             return
         if self._model is None:

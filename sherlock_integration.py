@@ -112,7 +112,7 @@ def _parse_stdout(stdout_text: str, username: str) -> list[dict[str, str]]:
         )
     return accounts
 
-def run_sherlock(username: str, timeout: int = 60) -> list[dict[str, str]]:
+def run_sherlock(username: str, timeout: int = 150) -> list[dict[str, str]]:
     command = find_sherlock_command()
     if command is None:
         raise RuntimeError(
@@ -131,7 +131,7 @@ def run_sherlock(username: str, timeout: int = 60) -> list[dict[str, str]]:
         "--print-found",
         "--no-color",
         "--timeout",
-        "8",
+        "5",
     ]
     if _sherlock_supports_local():
         base_flags = ["--local"] + base_flags
@@ -184,7 +184,7 @@ def run_sherlock(username: str, timeout: int = 60) -> list[dict[str, str]]:
         except OSError:
             pass
 
-def process_username_check(user_id: int, username: str, timeout: int = 60) -> dict:
+def process_username_check(user_id: int, username: str, timeout: int = 150) -> dict:
     username = (username or "").strip().lstrip("@")
     if not username:
         database.mark_username_skipped(user_id, username)
@@ -202,8 +202,8 @@ def process_username_check(user_id: int, username: str, timeout: int = 60) -> di
     except subprocess.TimeoutExpired:
         err = "Sherlock timed out"
         database.mark_username_error(user_id, username, err)
-        return {"status": "error", "found_count": 0, "message": err}
+        return {"status": "timeout", "found_count": 0, "message": err}
     except Exception as exc:
-        err = f"Sherlock check failed ({type(exc).__name__})"
+        err = f"Sherlock check failed ({type(exc).__name__}): {exc}"
         database.mark_username_error(user_id, username, err)
         return {"status": "error", "found_count": 0, "message": err}
