@@ -49,9 +49,6 @@ class TelegramCollector:
             callback({"type": event_type, **payload})
 
     async def _download_avatar(self, client: TelegramClient, user: object, event_callback: EventCallback) -> str:
-        if not getattr(user, "photo", None):
-            return ""
-
         user_id = int(getattr(user, "id"))
         database.AVATARS_DIR.mkdir(parents=True, exist_ok=True)
         photo_file = database.AVATARS_DIR / f"{user_id}.jpg"
@@ -60,8 +57,37 @@ class TelegramCollector:
         if photo_file.exists() and photo_file.stat().st_size == 0:
             photo_file.unlink(missing_ok=True)
 
+        photo_source = user
+        use_media_download = False
+        if not getattr(user, "photo", None):
+            try:
+                photos = await client.get_profile_photos(user, limit=1)
+                if photos:
+                    photo_source = photos[0]
+                    use_media_download = True
+                else:
+                    return ""
+            except FloodWaitError as exc:
+                self._emit(
+                    event_callback,
+                    "log",
+                    message=f"Photo lookup rate limit reached. Sleeping {exc.seconds}s.",
+                )
+                await asyncio.sleep(exc.seconds)
+                return ""
+            except Exception as exc:
+                self._emit(
+                    event_callback,
+                    "log",
+                    message=f"Photo lookup failed for {user_id}: {type(exc).__name__}",
+                )
+                return ""
+
         try:
-            downloaded = await client.download_profile_photo(user, file=str(photo_file))
+            if use_media_download:
+                downloaded = await client.download_media(photo_source, file=str(photo_file))
+            else:
+                downloaded = await client.download_profile_photo(photo_source, file=str(photo_file))
         except FloodWaitError as exc:
             self._emit(
                 event_callback,

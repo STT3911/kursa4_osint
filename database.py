@@ -26,6 +26,7 @@ MEMORY_DB_URI = "file:osint_runtime?mode=memory&cache=shared"
 MEMORY_KEEPALIVE: sqlite3.Connection | None = None
 _AVATAR_NAME_RE = re.compile(r"^\d+\.(?:jpg|jpeg|png|webp)$", re.IGNORECASE)
 _ALLOWED_SOCIAL_SCHEMES = {"http", "https"}
+_IDENTITY_MATCHER = None
 
 def utcnow_text() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1020,6 +1021,7 @@ def _ensure_social_account_reviews_table(conn: sqlite3.Connection) -> None:
 def get_profile_card(user_id: int) -> dict:
     init_db()
     from identity_matcher import IdentityMatcher
+    global _IDENTITY_MATCHER
 
     with get_connection() as conn:
         _ensure_social_account_reviews_table(conn)
@@ -1064,7 +1066,9 @@ def get_profile_card(user_id: int) -> dict:
     if safe_photo_path and safe_photo_path != profile.get("photo_path"):
         profile["photo_path"] = safe_photo_path
         profile["has_photo"] = 1
-    matcher = IdentityMatcher()
+    if _IDENTITY_MATCHER is None:
+        _IDENTITY_MATCHER = IdentityMatcher()
+    matcher = _IDENTITY_MATCHER
     social_accounts = matcher.match_many(profile, [dict(row) for row in social_rows])
     for account in social_accounts:
         percent = int(account.get("same_person_percent") or 0)

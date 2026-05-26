@@ -1054,7 +1054,7 @@ class OSINTApp(tk.Tk):
                 terms=", ".join(matched_terms) if matched_terms else "прямых лексических совпадений нет"
             )
         )
-        classification = self.profile_classifier.classify(profile)
+        classification = self.profile_classifier.classify(profile, allow_embeddings=False)
         self.profile_ai_var.set(f"AI-классификация: {classification['explanation']}")
 
         self.bio_box.configure(state="normal")
@@ -1086,7 +1086,7 @@ class OSINTApp(tk.Tk):
         self.social_box.insert("1.0", "\n".join(social_lines) if social_lines else "Внешние аккаунты не найдены.")
         self.social_box.configure(state="disabled")
 
-        self._update_avatar(profile["photo_path"])
+        self._update_avatar(profile["photo_path"], int(profile["user_id"]))
 
     def _highlight_bio_terms(self, widget: ScrolledText, terms: list[str]) -> None:
         widget.tag_remove("query_match", "1.0", "end")
@@ -1204,7 +1204,9 @@ class OSINTApp(tk.Tk):
 
         threading.Thread(target=runner, daemon=True).start()
 
-    def _update_avatar(self, photo_path: str) -> None:
+    def _update_avatar(self, photo_path: str, user_id: int | None = None) -> None:
+        if not photo_path and user_id is not None:
+            photo_path = database.find_existing_avatar_path(user_id)
         if not photo_path:
             self.avatar_label.configure(image="", text="Аватар недоступен")
             self.current_avatar = None
@@ -1279,8 +1281,6 @@ class OSINTApp(tk.Tk):
                 self._append_log(f"Realtime-профиль сохранен: @{username} (user_id={user_id}).")
                 self.refresh_dashboard()
                 self.search_engine.invalidate()
-                self.show_profile_card(user_id)
-                self.notebook.select(self.profile_tab)
             elif event_type == "search_results":
                 self._show_search_results(event["results"], str(event.get("query", "")))
             elif event_type == "search_summary":

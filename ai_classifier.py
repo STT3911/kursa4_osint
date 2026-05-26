@@ -204,9 +204,9 @@ class ProfileClassifier:
         except Exception:
             return False
 
-    def classify(self, row: dict[str, Any]) -> dict[str, Any]:
+    def classify(self, row: dict[str, Any], allow_embeddings: bool = True) -> dict[str, Any]:
         text = profile_text(row)
-        if self._classifier is not None and self._ensure_embedding_model():
+        if allow_embeddings and self._classifier is not None and self._ensure_embedding_model():
             vector = self._embedding_model.encode([text], normalize_embeddings=True)
             predicted_label = str(self._classifier.predict(vector)[0])
             if hasattr(self._classifier, "predict_proba"):
