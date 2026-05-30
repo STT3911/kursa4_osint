@@ -1,12 +1,3 @@
-"""
-OSINT Telegram Bot — поиск связей профилей через граф.
-
-Запуск:
-    .venv\\Scripts\\python.exe osint_bot.py --token YOUR_BOT_TOKEN
-
-Переменная окружения (альтернатива флагу):
-    OSINT_BOT_TOKEN=YOUR_BOT_TOKEN
-"""
 from __future__ import annotations
 
 import argparse
@@ -56,11 +47,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("osint_bot")
 
-# --- Контроль доступа -------------------------------------------------------
-# Бот работает с базой реальных людей и умеет запускать live-сбор через сессию
-# владельца, поэтому команды доступны только пользователям из allow-list.
 _USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{1,64}$")
-
 
 def _load_allowed_users() -> set[int]:
     raw = env_first("OSINT_BOT_ALLOWED_USERS", "OSINT_BOT_ADMINS")
@@ -71,23 +58,18 @@ def _load_allowed_users() -> set[int]:
             ids.add(int(part))
     return ids
 
-
 _ALLOWED_USERS: set[int] = _load_allowed_users()
 
-
 def _user_is_allowed(update: "Update") -> bool:
-    # Пустой список = бот не настроен на ограничение (открыт всем).
-    # При запуске в main() выводится предупреждение.
+
     if not _ALLOWED_USERS:
         return True
     user = getattr(update, "effective_user", None)
     return bool(user and user.id in _ALLOWED_USERS)
 
-
 def restricted(
     handler: "Callable[[Update, ContextTypes.DEFAULT_TYPE], Awaitable[None]]",
 ) -> "Callable[[Update, ContextTypes.DEFAULT_TYPE], Awaitable[None]]":
-    """Декоратор: пропускает только авторизованных пользователей."""
 
     @functools.wraps(handler)
     async def wrapper(update: "Update", context: "ContextTypes.DEFAULT_TYPE") -> None:
@@ -100,25 +82,20 @@ def restricted(
             )
             if getattr(update, "message", None):
                 await update.message.reply_text(
-                    "⛔ Доступ запрещён. Обратитесь к владельцу бота."
+                    " Доступ запрещён. Обратитесь к владельцу бота."
                 )
             return
         await handler(update, context)
 
     return wrapper
 
-
 def _valid_lookup(username: str) -> bool:
     return bool(_USERNAME_RE.match(username or ""))
 
-
 def _e(value: Any) -> str:
-    """Экранирует строку для HTML-режима Telegram."""
     return html.escape(str(value or ""))
 
-
 def _estimate_reg_date(user_id: int) -> str:
-    """Оценивает месяц регистрации по Telegram user_id."""
     from datetime import date
     CHECKPOINTS = [
         (100_000_000,  date(2014, 6, 1)),
@@ -162,7 +139,6 @@ def _invalidate_graph_cache() -> None:
     _GRAPH_CACHE_TS = 0.0
 
 async def _reply_long(message: Any, text: str, **kwargs: Any) -> None:
-    """Отправляет длинное сообщение, разбивая по 4000 символов."""
     MAX = 4000
     if len(text) <= MAX:
         await message.reply_text(text, **kwargs)
@@ -181,9 +157,6 @@ async def _reply_long(message: Any, text: str, **kwargs: Any) -> None:
         await message.reply_text("\n".join(part), **kwargs)
 
 async def _fetch_profile_live(username: str) -> str | None:
-    """Забирает профиль из Telegram, находит общие группы, собирает участников и взаимодействия.
-    Возвращает сообщение о статусе или None при успехе.
-    """
     session_file = Path("osint_session.session")
     if not session_file.exists():
         return "сессия Telethon не найдена — авторизуйся через десктопное приложение"
@@ -313,7 +286,6 @@ async def _fetch_profile_live(username: str) -> str | None:
         return str(exc)
 
 def _load_graph_data() -> dict[str, Any]:
-    """Загружает данные из БД и строит граф (кэш 60 с)."""
     global _GRAPH_CACHE, _GRAPH_CACHE_TS
     if _GRAPH_CACHE and (time.monotonic() - _GRAPH_CACHE_TS) < _GRAPH_TTL:
         return _GRAPH_CACHE
@@ -350,7 +322,6 @@ def _load_graph_data() -> dict[str, Any]:
     return _GRAPH_CACHE
 
 def _find_node_by_username(G: Any, username: str) -> int | None:
-    """Ищет узел по username (без @)."""
     username = username.lower().lstrip("@").strip()
     for node_id in G.nodes():
         node_username = (G.nodes[node_id].get("username") or "").lower()
@@ -475,20 +446,20 @@ async def cmd_whois(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         ]
 
     lines = [
-        f"👤 <b>{node_id}</b> | @{uname}",
-        f"📅 Месяц регистрации: {reg_date}",
+        f" <b>{node_id}</b> | @{uname}",
+        f" Месяц регистрации: {reg_date}",
         "",
     ]
 
     if name_history:
-        lines.append("📝 <b>История имён:</b>")
+        lines.append(" <b>История имён:</b>")
         for i, name in enumerate(name_history, 1):
             lines.append(f"{i}. {_e(name)}")
         lines.append("")
 
     if neighbors:
         shown = neighbors[:20]
-        lines.append(f"👥 <b>Знакомые ({len(shown)} из {len(neighbors)}):</b>")
+        lines.append(f" <b>Знакомые ({len(shown)} из {len(neighbors)}):</b>")
         for nb in shown:
             nb_p = profiles.get(nb, {})
             nb_name = _e((nb_p.get("first_name") or "").strip() or str(nb))
@@ -499,7 +470,7 @@ async def cmd_whois(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 lines.append(f"- {nb_name} [{nb}]")
         lines.append("")
 
-    lines.append(f"👥 Количество групп: {len(group_names)}")
+    lines.append(f" Количество групп: {len(group_names)}")
 
     if group_names:
         lines.append("")
@@ -664,9 +635,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         context.args = [text.lstrip("@")]
         await cmd_whois(update, context)
 
-
 async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Тихо собирает связи из сообщений групп: forwards, replies, mentions."""
     msg = update.message
     if not msg or not msg.from_user:
         return

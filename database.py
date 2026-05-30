@@ -66,8 +66,7 @@ def _is_safe_profile_url(value: str) -> bool:
     hostname = parsed.hostname
     if not hostname or hostname.lower() == "localhost":
         return False
-    # Блокируем ссылки на внутренние/служебные адреса (loopback, частные сети,
-    # link-local, multicast) — внешние инструменты не должны подсовывать их.
+
     try:
         ip = ipaddress.ip_address(hostname)
     except ValueError:
@@ -382,8 +381,6 @@ def init_db() -> None:
             ACTIVE_DB_URI = True
             _initialize_memory_schema(seed_from_csv=True)
     DB_READY = True
-
-
 
 def get_existing_user_ids() -> set[int]:
     init_db()
@@ -1005,8 +1002,6 @@ def get_search_dataset() -> list[dict]:
         ).fetchall()
     return [dict(row) for row in rows]
 
-
-
 def list_user_connections() -> list[dict]:
     init_db()
     with get_connection() as conn:
@@ -1032,7 +1027,6 @@ def _ensure_social_account_reviews_table(conn: sqlite3.Connection) -> None:
         """
     )
     conn.commit()
-
 
 def get_profile_card(user_id: int) -> dict:
     init_db()
@@ -1100,8 +1094,6 @@ def get_profile_card(user_id: int) -> dict:
         "groups": [dict(row) for row in group_rows],
         "social_accounts": social_accounts,
     }
-
-
 
 def get_osint_analysis_snapshot() -> dict:
     init_db()
@@ -1448,7 +1440,6 @@ AI/NLP-часть выполняет семантический и гибрид�
 """
     target.write_text(content, encoding="utf-8")
     return target
-
 
 def export_coursework_report_markdown(path: Path | None = None) -> Path:
     return export_summary_report_markdown(path)

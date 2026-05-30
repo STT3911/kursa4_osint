@@ -13,7 +13,7 @@ try:
     from telethon import TelegramClient
     from telethon.errors import FloodWaitError
     from telethon.tl.functions.users import GetFullUserRequest
-except ImportError as exc:  
+except ImportError as exc:
     TelegramClient = None
     FloodWaitError = Exception
     GetFullUserRequest = None

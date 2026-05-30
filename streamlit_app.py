@@ -15,7 +15,6 @@ from nlp_search_engine import NLPSearchEngine
 from sherlock_integration import is_sherlock_available, process_username_check
 from telegram_service import TelegramCollector
 
-
 PAGE_OPTIONS = [
     "Главная",
     "Сбор данных",
@@ -24,7 +23,6 @@ PAGE_OPTIONS = [
     "Карточка профиля",
     "Экспорт и отчеты",
 ]
-
 
 def configure_page() -> None:
     st.set_page_config(
@@ -211,45 +209,36 @@ def configure_page() -> None:
         unsafe_allow_html=True,
     )
 
-
 def invalidate_views() -> None:
     st.cache_data.clear()
     get_search_engine().invalidate()
-
 
 def format_exposure(value: str) -> str:
     mapping = {"high": "высокий", "medium": "средний", "low": "низкий"}
     return mapping.get(value or "", value or "-")
 
-
 def format_confidence(value: str) -> str:
     mapping = {"probable": "вероятно", "weak": "слабое совпадение", "unverified": "не подтверждено"}
     return mapping.get(value or "", value or "-")
-
 
 def format_review(value: str) -> str:
     mapping = {"pending": "ожидает проверки", "confirmed": "подтверждено вручную", "rejected": "отклонено"}
     return mapping.get(value or "", value or "-")
 
-
 def exposure_badge(value: str) -> str:
     label = format_exposure(value)
     return f"<span class='badge badge-exposure-{value}'>{label}</span>"
-
 
 def confidence_badge(value: str) -> str:
     label = format_confidence(value)
     return f"<span class='badge badge-confidence-{value}'>{label}</span>"
 
-
 def review_badge(value: str) -> str:
     label = format_review(value)
     return f"<span class='badge badge-review-{value}'>{label}</span>"
 
-
 def dataframe_from_rows(rows: list[dict[str, Any]]) -> pd.DataFrame:
     return pd.DataFrame(rows) if rows else pd.DataFrame()
-
 
 def local_photo_path(photo_path: str) -> str | None:
     if not photo_path:
@@ -258,7 +247,6 @@ def local_photo_path(photo_path: str) -> str | None:
     if not absolute.exists():
         return None
     return str(absolute)
-
 
 def build_osint_breakdown(profile: dict[str, Any]) -> list[str]:
     username_points = 15 if profile.get("username") else 0
@@ -285,47 +273,39 @@ def build_osint_breakdown(profile: dict[str, Any]) -> list[str]:
         f"Итог: {profile.get('osint_score', 0)}/100, уровень: {format_exposure(str(profile.get('exposure_level') or ''))}",
     ]
 
-
 @st.cache_resource
 def get_search_engine() -> NLPSearchEngine:
     return NLPSearchEngine()
-
 
 @st.cache_data
 def load_dashboard_stats() -> dict[str, Any]:
     database.init_db()
     return database.get_dashboard_stats()
 
-
 @st.cache_data
 def load_analytics_snapshot() -> dict[str, Any]:
     database.init_db()
     return database.get_analytics_snapshot()
-
 
 @st.cache_data
 def load_osint_snapshot() -> dict[str, Any]:
     database.init_db()
     return database.get_osint_analysis_snapshot()
 
-
 @st.cache_data
 def load_profile_index(limit: int = 5000) -> list[dict[str, Any]]:
     database.init_db()
     return database.list_profiles_summary(limit=limit)
-
 
 @st.cache_data
 def load_profile_card(user_id: int) -> dict[str, Any]:
     database.init_db()
     return database.get_profile_card(user_id)
 
-
 @st.cache_data
 def load_latest_sherlock_log(user_id: int) -> dict[str, Any] | None:
     database.init_db()
     return database.get_latest_sherlock_log(user_id)
-
 
 def render_hero() -> None:
     st.markdown(
@@ -338,7 +318,6 @@ def render_hero() -> None:
         unsafe_allow_html=True,
     )
 
-
 def render_metric_card(label: str, value: str, note: str) -> None:
     st.markdown(
         f"""
@@ -350,7 +329,6 @@ def render_metric_card(label: str, value: str, note: str) -> None:
         """,
         unsafe_allow_html=True,
     )
-
 
 def style_console_figure(fig, height: int = 340, showlegend: bool | None = None):
     layout_args: dict[str, Any] = {
@@ -380,11 +358,9 @@ def style_console_figure(fig, height: int = 340, showlegend: bool | None = None)
     fig.update_layout(**layout_args)
     return fig
 
-
 def open_profile(user_id: int) -> None:
     st.session_state["selected_profile_id"] = int(user_id)
     st.session_state["pending_nav_page"] = "Карточка профиля"
-
 
 def show_enrichment_result(result: dict[str, Any]) -> None:
     status = result.get("status")
@@ -396,19 +372,16 @@ def show_enrichment_result(result: dict[str, Any]) -> None:
     else:
         st.error(message)
 
-
 def show_enrichment_flash() -> None:
     flash = st.session_state.pop("enrichment_flash", None)
     if isinstance(flash, dict):
         show_enrichment_result(flash)
-
 
 def run_maigret_enrichment(user_id: int, username: str) -> None:
     with st.spinner("Выполняется Maigret-обогащение..."):
         result = process_maigret_check(user_id, username)
         invalidate_views()
         st.session_state["enrichment_flash"] = result
-
 
 def render_sidebar() -> str:
     with st.sidebar:
@@ -427,7 +400,6 @@ def render_sidebar() -> str:
         st.markdown("---")
         st.caption("Интерфейс Streamlit используется как основная витрина для защиты курсовой.")
         return selected_page
-
 
 def render_main_page() -> None:
     stats = load_dashboard_stats()
@@ -532,7 +504,6 @@ def render_main_page() -> None:
                     st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
 
-
 def render_collection_page() -> None:
     st.markdown("## Сбор данных из Telegram")
     st.caption("Интерфейс использует существующий backend и после сбора сразу запускает обработку очереди Sherlock.")
@@ -608,7 +579,6 @@ def render_collection_page() -> None:
     cols[1].metric("В очереди Sherlock", stats.get("queued_checks", 0))
     cols[2].metric("В очереди Maigret", stats.get("queued_maigret_checks", 0))
     cols[3].metric("Внешних аккаунтов", stats.get("social_accounts", 0))
-
 
 def render_osint_page() -> None:
     st.markdown("## OSINT-анализ")
@@ -696,7 +666,6 @@ def render_osint_page() -> None:
         else:
             st.info("На текущем датасете пересечения групп не обнаружены.")
 
-
 def run_search(mode_key: str, query: str, min_osint: int, exposure_filter: str, username_only: bool) -> tuple[list[dict[str, Any]], str]:
     engine = get_search_engine()
     if mode_key == "hybrid":
@@ -726,7 +695,6 @@ def run_search(mode_key: str, query: str, min_osint: int, exposure_filter: str, 
             f"OSINT={top.get('osint_score', 0)}, совпадения={top.get('matched_terms') or '-'}"
         )
     return filtered_results, summary
-
 
 def render_search_page() -> None:
     st.markdown("## NLP-поиск")
@@ -807,7 +775,6 @@ def render_search_page() -> None:
         if result.get("site_list"):
             st.caption(f"Площадки: {result['site_list']}")
         st.markdown("</div>", unsafe_allow_html=True)
-
 
 def render_profile_page() -> None:
     st.markdown("## Карточка профиля")
@@ -938,7 +905,6 @@ def render_profile_page() -> None:
     else:
         st.info("Лог Sherlock для этого профиля пока отсутствует.")
 
-
 def render_exports_page() -> None:
     st.markdown("## Экспорт и отчеты")
     selected_user_id = st.session_state.get("selected_profile_id")
@@ -976,7 +942,6 @@ def render_exports_page() -> None:
         else:
             st.info("Выбери профиль, чтобы скачать персональный отчет.")
 
-
 def main() -> None:
     database.init_db()
     configure_page()
@@ -995,7 +960,6 @@ def main() -> None:
         render_profile_page()
     elif selected_page == "Экспорт и отчеты":
         render_exports_page()
-
 
 if __name__ == "__main__":
     main()

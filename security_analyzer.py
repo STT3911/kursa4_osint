@@ -337,13 +337,6 @@ def _username_looks_bot(username: str) -> bool:
     return bool(u) and any(p.match(u) for p in _BOT_PATTERNS)
 
 def detect_coordinated_behavior(profiles: list[dict[str, Any]]) -> dict[str, Any]:
-    """Detect patterns suggesting coordinated inauthentic behavior.
-
-    Checks:
-    - High ratio of bot-like usernames in the dataset
-    - Clusters of profiles with identical bio fragments (already in detect_anomalies)
-    - Username prefix families (many profiles share a common prefix + digits)
-    """
     if not profiles:
         return {"bot_username_count": 0, "bot_ratio": 0.0, "prefix_families": [], "verdict": "insufficient data"}
 

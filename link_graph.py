@@ -72,14 +72,6 @@ def build_link_graph(
     account_rows: list[dict[str, Any]],
     interaction_rows: list[dict[str, Any]] | None = None,
 ) -> Any:
-    """Build an undirected weighted graph from profile data.
-
-    Edges:
-      - group edge (weight 1.0): two profiles share a Telegram group
-      - site edge (weight 2.0): two profiles both found on a trusted platform
-
-    Returns None when networkx is not installed.
-    """
     if not NETWORKX_AVAILABLE:
         return None
 
@@ -167,7 +159,6 @@ def build_link_graph(
     return G
 
 def compute_graph_metrics(G: Any) -> dict[str, Any]:
-    """Compute centrality, connected components, bridges."""
     if G is None or not NETWORKX_AVAILABLE or G.number_of_nodes() == 0:
         return {
             "nodes": 0, "edges": 0, "components": 0,
@@ -242,7 +233,6 @@ def compute_graph_metrics(G: Any) -> dict[str, Any]:
     }
 
 def detect_bot_networks(G: Any, metrics: dict[str, Any]) -> list[dict[str, Any]]:
-    """Find clusters with suspicious automated account patterns."""
     if not NETWORKX_AVAILABLE or G is None or not metrics:
         return []
 
@@ -280,7 +270,6 @@ def draw_link_graph(
     max_nodes: int = 80,
     profile_risks: dict[int, str] | None = None,
 ) -> None:
-    """Render graph on a matplotlib axis."""
     if not NETWORKX_AVAILABLE or G is None:
         ax.text(0.5, 0.5, "networkx недоступен", ha="center", va="center", transform=ax.transAxes)
         ax.set_axis_off()
@@ -344,14 +333,12 @@ def draw_link_graph(
     )
     ax.set_axis_off()
 
-
 def draw_interactive_graph(
     G: Any,
     output_path: str,
     max_nodes: int = 200,
     profile_risks: dict[int, str] | None = None,
 ) -> str:
-    """Render an interactive HTML graph via pyvis. Returns output_path."""
     try:
         from pyvis.network import Network
     except ImportError:
@@ -491,9 +478,7 @@ def draw_interactive_graph(
 
     return output_path
 
-
 def get_link_analysis() -> dict[str, Any]:
-    """Fetch data from DB and run full graph analysis."""
     database.init_db()
     with database.get_connection() as conn:
         profiles = [dict(r) for r in conn.execute(

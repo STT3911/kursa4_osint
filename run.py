@@ -1,12 +1,3 @@
-"""
-Единая точка входа — запускает desktop-приложение и Telegram-бот вместе.
-
-Использование:
-    .venv\\Scripts\\python.exe run.py
-
-Telegram-бот стартует автоматически если в .env задан OSINT_BOT_TOKEN.
-При закрытии десктопного приложения бот тоже останавливается.
-"""
 from __future__ import annotations
 
 import os
@@ -17,7 +8,6 @@ from pathlib import Path
 from config import env_first, load_env_file
 
 _PID_FILE = Path(__file__).parent / ".bot.pid"
-
 
 def _kill_previous_bot() -> None:
     if not _PID_FILE.exists():
@@ -35,7 +25,6 @@ def _kill_previous_bot() -> None:
         pass
     finally:
         _PID_FILE.unlink(missing_ok=True)
-
 
 def _start_bot() -> subprocess.Popen | None:
     load_env_file()
@@ -59,7 +48,6 @@ def _start_bot() -> subprocess.Popen | None:
     print(f"[run] Telegram-бот запущен  (pid={proc.pid})")
     return proc
 
-
 def main() -> None:
     bot_proc = _start_bot()
 
@@ -77,7 +65,6 @@ def main() -> None:
                 bot_proc.kill()
             print("[run] Telegram-бот остановлен")
         _PID_FILE.unlink(missing_ok=True)
-
 
 if __name__ == "__main__":
     main()
