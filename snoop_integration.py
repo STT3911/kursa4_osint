@@ -192,7 +192,7 @@ def process_snoop_check(user_id: int, username: str, timeout: int = 90) -> dict:
     except subprocess.TimeoutExpired:
         err = "Snoop timed out"
         database.mark_enrichment_error(user_id, username, "snoop", err)
-        return {"status": "error", "found_count": 0, "message": err}
+        return {"status": "timeout", "found_count": 0, "message": err}
     except ValueError as exc:
         err = str(exc)
         database.mark_enrichment_error(user_id, username, "snoop", err)

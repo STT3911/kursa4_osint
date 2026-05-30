@@ -10,7 +10,11 @@ identity_pairs.csv.bak
 identity_pairs_raw.csv
 auto_label_identity_pairs.py
 nlp_dataset.csv
+nlp_dataset_enriched.csv
 osint_report.csv
+summary_report.md
+security_report.md
+profile_reports/
 models/*.joblib
 models/*.json
 avatars/

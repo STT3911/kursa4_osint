@@ -11,12 +11,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import functools
 import html
 import io
 import logging
+import re
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 import database
 from config import env_first
@@ -53,6 +55,62 @@ logging.basicConfig(
     level=logging.INFO,
 )
 log = logging.getLogger("osint_bot")
+
+# --- Контроль доступа -------------------------------------------------------
+# Бот работает с базой реальных людей и умеет запускать live-сбор через сессию
+# владельца, поэтому команды доступны только пользователям из allow-list.
+_USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{1,64}$")
+
+
+def _load_allowed_users() -> set[int]:
+    raw = env_first("OSINT_BOT_ALLOWED_USERS", "OSINT_BOT_ADMINS")
+    ids: set[int] = set()
+    for part in raw.replace(";", ",").split(","):
+        part = part.strip().lstrip("@")
+        if part.isdigit():
+            ids.add(int(part))
+    return ids
+
+
+_ALLOWED_USERS: set[int] = _load_allowed_users()
+
+
+def _user_is_allowed(update: "Update") -> bool:
+    # Пустой список = бот не настроен на ограничение (открыт всем).
+    # При запуске в main() выводится предупреждение.
+    if not _ALLOWED_USERS:
+        return True
+    user = getattr(update, "effective_user", None)
+    return bool(user and user.id in _ALLOWED_USERS)
+
+
+def restricted(
+    handler: "Callable[[Update, ContextTypes.DEFAULT_TYPE], Awaitable[None]]",
+) -> "Callable[[Update, ContextTypes.DEFAULT_TYPE], Awaitable[None]]":
+    """Декоратор: пропускает только авторизованных пользователей."""
+
+    @functools.wraps(handler)
+    async def wrapper(update: "Update", context: "ContextTypes.DEFAULT_TYPE") -> None:
+        if not _user_is_allowed(update):
+            user = getattr(update, "effective_user", None)
+            log.warning(
+                "Отклонён неавторизованный доступ: user_id=%s username=%s",
+                getattr(user, "id", None),
+                getattr(user, "username", None),
+            )
+            if getattr(update, "message", None):
+                await update.message.reply_text(
+                    "⛔ Доступ запрещён. Обратитесь к владельцу бота."
+                )
+            return
+        await handler(update, context)
+
+    return wrapper
+
+
+def _valid_lookup(username: str) -> bool:
+    return bool(_USERNAME_RE.match(username or ""))
+
 
 def _e(value: Any) -> str:
     """Экранирует строку для HTML-режима Telegram."""
@@ -325,6 +383,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await cmd_start(update, context)
 
+@restricted
 async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     data = _load_graph_data()
     m = data["metrics"]
@@ -343,6 +402,7 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         lines.append("Мосты: " + ", ".join(_e(b) for b in m["bridge_nodes"][:5]))
     await _reply_long(update.message, "\n".join(lines), parse_mode="HTML")
 
+@restricted
 async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     data = _load_graph_data()
     top = data["metrics"].get("top_central", [])
@@ -359,6 +419,7 @@ async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
     await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
+@restricted
 async def cmd_whois(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     args = context.args
     if not args:
@@ -366,6 +427,11 @@ async def cmd_whois(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     username = args[0].lstrip("@").strip()
+    if not _valid_lookup(username):
+        await update.message.reply_text(
+            "Некорректный username. Допустимы латиница, цифры и подчёркивание (до 64 символов)."
+        )
+        return
     data = _load_graph_data()
     G = data["G"]
     profiles = data["profiles"]
@@ -444,6 +510,7 @@ async def cmd_whois(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     await _reply_long(update.message, "\n".join(lines), parse_mode="HTML")
 
+@restricted
 async def cmd_cluster(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     args = context.args
     if not args:
@@ -451,6 +518,11 @@ async def cmd_cluster(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     username = args[0].lstrip("@").strip()
+    if not _valid_lookup(username):
+        await update.message.reply_text(
+            "Некорректный username. Допустимы латиница, цифры и подчёркивание (до 64 символов)."
+        )
+        return
     data = _load_graph_data()
     G = data["G"]
     profiles = data["profiles"]
@@ -495,6 +567,7 @@ async def cmd_cluster(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     await _reply_long(update.message, "\n".join(lines), parse_mode="HTML")
 
+@restricted
 async def cmd_bots(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     data = _load_graph_data()
     networks = data["bot_networks"]
@@ -519,6 +592,7 @@ async def cmd_bots(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     await _reply_long(update.message, "\n".join(lines), parse_mode="HTML")
 
+@restricted
 async def cmd_graph(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("Строю граф, подожди...")
 
@@ -583,6 +657,7 @@ async def cmd_graph(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         caption=f"Граф связей: {m['nodes']} профилей, {m['edges']} связей",
     )
 
+@restricted
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = (update.message.text or "").strip()
     if text.startswith("@") or (text and not text.startswith("/")):
@@ -682,6 +757,14 @@ def main() -> None:
         import database as db_module
         from pathlib import Path
         db_module.DB_PATH = Path(args.db)
+
+    if not _ALLOWED_USERS:
+        log.warning(
+            "OSINT_BOT_ALLOWED_USERS не задан — бот отвечает ВСЕМ пользователям. "
+            "Укажи список Telegram ID в .env, чтобы ограничить доступ."
+        )
+    else:
+        log.info("Доступ к командам разрешён только для: %s", sorted(_ALLOWED_USERS))
 
     log.info("Starting OSINT Graph Bot...")
     asyncio.set_event_loop(asyncio.new_event_loop())

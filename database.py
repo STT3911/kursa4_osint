@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import ipaddress
 import re
 import sqlite3
 import tempfile
@@ -63,7 +64,22 @@ def _is_safe_profile_url(value: str) -> bool:
     if not parsed.netloc or parsed.username or parsed.password:
         return False
     hostname = parsed.hostname
-    if not hostname or hostname in {"localhost", "127.0.0.1", "::1"}:
+    if not hostname or hostname.lower() == "localhost":
+        return False
+    # Блокируем ссылки на внутренние/служебные адреса (loopback, частные сети,
+    # link-local, multicast) — внешние инструменты не должны подсовывать их.
+    try:
+        ip = ipaddress.ip_address(hostname)
+    except ValueError:
+        ip = None
+    if ip is not None and (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    ):
         return False
     return True
 
