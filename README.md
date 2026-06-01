@@ -92,7 +92,7 @@ Telegram-бот.
 - Только десктоп: `python app.py`
 - Веб-интерфейс: `streamlit run streamlit_app.py`
 - Только бот: `python osint_bot.py`
-- Сбор из группы через консоль: `python parser.py --group <имя_группы> --limit 200`
+- Сбор из группы через консоль: `python scripts/parser.py --group <имя_группы> --limit 200`
 
 ## Структура проекта
 
@@ -110,14 +110,17 @@ Telegram-бот.
 | `identity_matcher.py` | оценка совпадения личности |
 | `link_graph.py` | построение и анализ графа |
 | `security_analyzer.py` | оценка угроз, OPSEC и аномалий |
-| `train_classifier.py`, `train_identity_matcher.py` | обучение моделей |
-| `tests/` | юнит-тесты |
+| `scripts/` | вспомогательные консольные утилиты и обучение моделей |
 
-## Тесты
+Содержимое `scripts/`:
 
-```
-python -m unittest discover -s tests
-```
+| Скрипт | Назначение |
+|---|---|
+| `scripts/parser.py` | сбор профилей из Telegram-группы через консоль |
+| `scripts/ai_search.py` | интерактивный семантический поиск из консоли |
+| `scripts/con_db.py` | вывод связей «пользователь — чат» из базы |
+| `scripts/exp_csv.py` | экспорт датасетов в CSV |
+| `scripts/train_classifier.py`, `scripts/train_identity_matcher.py` | обучение моделей |
 
 ## Примечания
 

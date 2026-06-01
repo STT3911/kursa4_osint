@@ -1,6 +1,9 @@
 import argparse
 import asyncio
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from console_utils import configure_console_output
 from config import env_first, load_env_file

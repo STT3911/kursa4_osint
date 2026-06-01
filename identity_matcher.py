@@ -368,7 +368,7 @@ class IdentityMatcher:
                 self.disabled_reason = (
                     f"trained model disabled: feature schema mismatch "
                     f"(stored {len(stored_features)} features, current {len(FEATURE_NAMES)}). "
-                    "Re-train with train_identity_matcher.py."
+                    "Re-train with scripts/train_identity_matcher.py."
                 )
                 return
             self._model = artifact.get("model")

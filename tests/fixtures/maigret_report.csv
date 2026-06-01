@@ -1,3 +1,0 @@
-username,name,url_main,url_user,exists,http_status
-user,GitHub,https://github.com,https://github.com/user,claimed,200
-user,Reddit,https://reddit.com,https://reddit.com/user,available,404
