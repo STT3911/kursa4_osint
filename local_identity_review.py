@@ -9,10 +9,9 @@ from urllib.parse import urlsplit, quote
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 import database
-from qwen_identity import get_reviewer, insufficient, record
+from qwen_identity import PROMPT_VERSION, get_reviewer, insufficient, record
 from spiderfoot_integration import canonical_url
 
-PROMPT_VERSION = 1
 
 
 class _NoRedirect(HTTPRedirectHandler):

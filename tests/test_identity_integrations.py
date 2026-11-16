@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import database
 from identity_matcher import build_identity_features
-from qwen_identity import record, validate_response, QwenIdentityReviewer
+from qwen_identity import PROMPT_VERSION, record, validate_response, QwenIdentityReviewer
 from spiderfoot_integration import parse_spiderfoot_json, run_spiderfoot, canonical_url
 from local_identity_review import (
     fetch_public_account, process_qwen_review, load_reviews, _signature, _discovery_signature,
@@ -158,7 +158,7 @@ class PersistenceTests(unittest.TestCase):
         with database.get_connection() as conn:
             conn.execute("INSERT INTO qwen_identity_reviews VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                          (1, canonical_url(account["profile_url"]), _signature(profile),
-                          _discovery_signature(account), QwenIdentityReviewer().model_id, 1,
+                          _discovery_signature(account), QwenIdentityReviewer().model_id, PROMPT_VERSION,
                           json.dumps(review), datetime.now(timezone.utc).isoformat()))
             conn.commit()
         self.assertTrue(load_reviews(1, profile, [account]))
