@@ -17,7 +17,7 @@ from nlp_search_engine import NLPSearchEngine
 from link_graph import draw_link_graph, get_link_analysis
 from maigret_integration import is_maigret_available, process_maigret_check
 from spiderfoot_integration import process_spiderfoot_check
-from local_identity_review import process_qwen_review
+from local_identity_review import MODEL_DISPLAY_NAME, process_qwen_review
 from security_analyzer import export_security_report, get_security_snapshot
 from sherlock_integration import is_sherlock_available, process_username_check
 from snoop_integration import is_snoop_available, process_snoop_check
@@ -401,7 +401,7 @@ class OSINTApp(tk.Tk):
         review_buttons.grid(row=10, column=1, sticky="w", pady=(8, 0))
         ttk.Button(review_buttons, text="Проверить через SpiderFoot",
                    command=self.run_spiderfoot_for_current_profile).pack(side="left")
-        ttk.Button(review_buttons, text="Сопоставить через Qwen",
+        ttk.Button(review_buttons, text="Сопоставить профили",
                    command=self.run_qwen_for_current_profile).pack(side="left", padx=(8, 0))
 
         ttk.Label(self.profile_tab, text="Bio").pack(anchor="w", pady=(16, 4))
@@ -1226,7 +1226,8 @@ class OSINTApp(tk.Tk):
             messagebox.showinfo("Нет username", "Для SpiderFoot нужен username.")
             return
         self._local_review_busy = True
-        self._append_log(f"Запущена проверка {tool} для профиля {user_id}.")
+        tool_label = "SpiderFoot" if tool == "spiderfoot" else MODEL_DISPLAY_NAME
+        self._append_log(f"{tool_label}: запущена проверка профиля {user_id}.")
 
         def runner() -> None:
             try:
@@ -1236,7 +1237,7 @@ class OSINTApp(tk.Tk):
                                       "message": result["message"]})
             except Exception as exc:
                 self.event_queue.put({"type": "local_review_done", "user_id": user_id,
-                                      "message": f"{tool}: {exc}"})
+                                      "message": f"{tool_label}: {exc}"})
 
         threading.Thread(target=runner, daemon=True).start()
 

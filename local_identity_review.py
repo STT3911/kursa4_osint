@@ -10,6 +10,8 @@ from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 import database
 from qwen_identity import PROMPT_VERSION, get_reviewer, insufficient, record
+
+MODEL_DISPLAY_NAME = "Модель сопоставления профилей"
 from spiderfoot_integration import canonical_url
 
 
@@ -97,7 +99,7 @@ def format_review(result: dict) -> str:
               "possible_same_person": "Возможное совпадение",
               "unlikely_same_person": "Есть противоречия",
               "insufficient_evidence": "Недостаточно данных"}
-    parts = ["Qwen: " + labels.get(result["verdict"], result["verdict"])]
+    parts = [MODEL_DISPLAY_NAME + ": " + labels.get(result["verdict"], result["verdict"])]
     if result.get("summary"):
         parts.append(result["summary"])
     for key, label in (("matches", "Совпадение"), ("contradictions", "Противоречие")):
@@ -147,7 +149,7 @@ def process_qwen_review(user_id: int, limit: int = 20) -> dict:
                 # Never turn network/model/JSON failures into an identity verdict.
                 failures.append(f"{url}: {type(exc).__name__}: {exc}")
         return {"status": "error" if failures else "done", "found_count": completed,
-                "message": f"Qwen: сохранено разборов — {completed}."
+                "message": f"{MODEL_DISPLAY_NAME}: сохранено разборов — {completed}."
                            + ("\n" + "\n".join(failures) if failures else "")}
     except Exception as exc:
-        return {"status": "error", "message": f"Qwen: {type(exc).__name__}: {exc}"}
+        return {"status": "error", "message": f"{MODEL_DISPLAY_NAME}: {type(exc).__name__}: {exc}"}

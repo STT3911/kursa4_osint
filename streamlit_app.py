@@ -858,13 +858,13 @@ def render_profile_page() -> None:
             invalidate_views()
             st.session_state["enrichment_flash"] = result
         st.rerun()
-    if review_cols[1].button("Сопоставить через Qwen", key=f"qwen-{selected_user_id}"):
-        with st.spinner("Qwen анализирует открытые данные профилей локально..."):
+    if review_cols[1].button("Сопоставить профили", key=f"qwen-{selected_user_id}"):
+        with st.spinner("Локальная модель анализирует данные профилей..."):
             result = process_qwen_review(int(selected_user_id))
             invalidate_views()
             st.session_state["enrichment_flash"] = result
         st.rerun()
-    st.caption("Qwen: текстовый разбор без калиброванной вероятности; "
+    st.caption("Локальная модель: текстовый разбор без калиброванной вероятности; "
                "автоматическое получение данных пока поддерживается для GitHub.")
 
     groups_text = ", ".join(item["group_name"] for item in data["groups"]) or "Нет групп"
