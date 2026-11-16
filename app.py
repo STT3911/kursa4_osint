@@ -16,6 +16,8 @@ from matplotlib.figure import Figure
 from nlp_search_engine import NLPSearchEngine
 from link_graph import draw_link_graph, get_link_analysis
 from maigret_integration import is_maigret_available, process_maigret_check
+from spiderfoot_integration import process_spiderfoot_check
+from local_identity_review import process_qwen_review
 from security_analyzer import export_security_report, get_security_snapshot
 from sherlock_integration import is_sherlock_available, process_username_check
 from snoop_integration import is_snoop_available, process_snoop_check
@@ -394,6 +396,13 @@ class OSINTApp(tk.Tk):
             text="Обогатить через Maigret",
             command=self.run_maigret_for_current_profile,
         ).pack(side="left", padx=(8, 0))
+
+        review_buttons = ttk.Frame(top_frame)
+        review_buttons.grid(row=10, column=1, sticky="w", pady=(8, 0))
+        ttk.Button(review_buttons, text="Проверить через SpiderFoot",
+                   command=self.run_spiderfoot_for_current_profile).pack(side="left")
+        ttk.Button(review_buttons, text="Сопоставить через Qwen",
+                   command=self.run_qwen_for_current_profile).pack(side="left", padx=(8, 0))
 
         ttk.Label(self.profile_tab, text="Bio").pack(anchor="w", pady=(16, 4))
         self.bio_box = ScrolledText(self.profile_tab, height=8, wrap="word")
@@ -1204,6 +1213,39 @@ class OSINTApp(tk.Tk):
 
         threading.Thread(target=runner, daemon=True).start()
 
+    def _run_local_review(self, tool: str) -> None:
+        if self.current_profile_id is None:
+            messagebox.showinfo("Профиль не выбран", "Сначала откройте карточку профиля.")
+            return
+        if getattr(self, "_local_review_busy", False):
+            messagebox.showinfo("Проверка выполняется", "Дождитесь завершения текущей проверки.")
+            return
+        user_id = self.current_profile_id
+        username = self.current_profile_username
+        if tool == "spiderfoot" and not username:
+            messagebox.showinfo("Нет username", "Для SpiderFoot нужен username.")
+            return
+        self._local_review_busy = True
+        self._append_log(f"Запущена проверка {tool} для профиля {user_id}.")
+
+        def runner() -> None:
+            try:
+                result = (process_spiderfoot_check(user_id, username) if tool == "spiderfoot"
+                          else process_qwen_review(user_id))
+                self.event_queue.put({"type": "local_review_done", "user_id": user_id,
+                                      "message": result["message"]})
+            except Exception as exc:
+                self.event_queue.put({"type": "local_review_done", "user_id": user_id,
+                                      "message": f"{tool}: {exc}"})
+
+        threading.Thread(target=runner, daemon=True).start()
+
+    def run_spiderfoot_for_current_profile(self) -> None:
+        self._run_local_review("spiderfoot")
+
+    def run_qwen_for_current_profile(self) -> None:
+        self._run_local_review("qwen")
+
     def _update_avatar(self, photo_path: str, user_id: int | None = None) -> None:
         if not photo_path and user_id is not None:
             photo_path = database.find_existing_avatar_path(user_id)
@@ -1291,6 +1333,13 @@ class OSINTApp(tk.Tk):
                 self._append_log(str(event.get("message", "")))
                 self.refresh_dashboard()
                 self.show_profile_card(int(event["user_id"]))
+            elif event_type == "local_review_done":
+                self._local_review_busy = False
+                self._append_log(str(event.get("message", "")))
+                self.search_engine.invalidate()
+                self.refresh_dashboard()
+                if self.current_profile_id == int(event["user_id"]):
+                    self.show_profile_card(int(event["user_id"]))
             elif event_type == "manual_enrichment_done":
                 self._append_log(str(event.get("message", "")))
                 self.refresh_dashboard()

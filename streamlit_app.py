@@ -11,6 +11,8 @@ import streamlit as st
 
 import database
 from maigret_integration import is_maigret_available, process_maigret_check
+from spiderfoot_integration import is_spiderfoot_available, process_spiderfoot_check
+from local_identity_review import process_qwen_review, format_review
 from nlp_search_engine import NLPSearchEngine
 from sherlock_integration import is_sherlock_available, process_username_check
 from telegram_service import TelegramCollector
@@ -848,6 +850,23 @@ def render_profile_page() -> None:
         else:
             st.warning("У этого профиля нет username, поэтому внешние проверки не запускаются.")
 
+    review_cols = st.columns(2)
+    if review_cols[0].button("Проверить через SpiderFoot", key=f"sf-{selected_user_id}",
+                             disabled=not profile.get("username") or not is_spiderfoot_available()):
+        with st.spinner("SpiderFoot ищет аккаунты-кандидаты..."):
+            result = process_spiderfoot_check(int(selected_user_id), str(profile["username"]))
+            invalidate_views()
+            st.session_state["enrichment_flash"] = result
+        st.rerun()
+    if review_cols[1].button("Сопоставить через Qwen", key=f"qwen-{selected_user_id}"):
+        with st.spinner("Qwen анализирует открытые данные профилей локально..."):
+            result = process_qwen_review(int(selected_user_id))
+            invalidate_views()
+            st.session_state["enrichment_flash"] = result
+        st.rerun()
+    st.caption("Qwen: текстовый разбор без калиброванной вероятности; "
+               "автоматическое получение данных пока поддерживается для GitHub.")
+
     groups_text = ", ".join(item["group_name"] for item in data["groups"]) or "Нет групп"
     st.markdown("### Telegram-присутствие")
     st.write(f"Чаты: {groups_text}")
@@ -875,6 +894,8 @@ def render_profile_page() -> None:
         st.caption(
             f"Confidence score: {account.get('confidence_score', 0)} | Источник: {account.get('source', '')} | Проверено: {account.get('checked_at', '')}"
         )
+        if account.get("qwen_review"):
+            st.text(format_review(account["qwen_review"]))
         if account.get("match_reasons"):
             st.write(f"Причины совпадения: {account['match_reasons']}")
         if account.get("review_note"):

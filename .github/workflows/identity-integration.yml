@@ -1,0 +1,21 @@
+name: Identity integration checks
+on:
+  push:
+    branches: [codex/spiderfoot-qwen]
+  pull_request:
+    branches: [osint]
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile Python files
+        run: python -m compileall -q .
+      - name: Test integrations without network, model weights or Telegram
+        run: python -m unittest discover -s tests -v

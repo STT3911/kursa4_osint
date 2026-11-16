@@ -307,6 +307,7 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         {
             "model": model,
             "feature_names": FEATURE_NAMES,
+            "feature_schema_version": 2,
             "classifier": classifier_name,
             "decision_threshold": threshold,
         },

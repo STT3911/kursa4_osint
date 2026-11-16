@@ -1,0 +1,5 @@
+# Install the appropriate PyTorch build for your CPU/CUDA separately.
+transformers>=4.51,<5
+accelerate>=1,<2
+safetensors>=0.4.5,<1
+# Optional CUDA 4-bit: pip install bitsandbytes

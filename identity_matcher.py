@@ -214,7 +214,7 @@ def _bio_url_overlap(profile: dict[str, Any], account: dict[str, Any]) -> float:
         return 0.0
     external_text = " ".join(
         str(account.get(field) or "")
-        for field in ("site_name", "profile_url", "username", "display_name", "bio", "description")
+        for field in ("display_name", "bio", "description", "links")
     )
     external_tokens = tokenize(external_text)
     if not external_tokens:
@@ -224,7 +224,12 @@ def _bio_url_overlap(profile: dict[str, Any], account: dict[str, Any]) -> float:
 
 def build_identity_features(profile: dict[str, Any], account: dict[str, Any]) -> dict[str, float]:
     telegram_username = normalize_identifier(str(profile.get("username") or ""))
-    account_username = normalize_identifier(str(account.get("username") or ""))
+    discovery_only = str(account.get("source") or "").lower() in {
+        "sherlock", "snoop", "maigret", "spiderfoot"
+    }
+    account_username = normalize_identifier(str(
+        account.get("observed_username") or ("" if discovery_only else account.get("username")) or ""
+    ))
     url_username = _extract_username_from_url(str(account.get("profile_url") or ""))
     external_username = account_username or url_username
 
@@ -362,6 +367,9 @@ class IdentityMatcher:
                 )
                 return
         artifact = joblib.load(self.model_path)
+        if not isinstance(artifact, dict) or artifact.get("feature_schema_version") != 2:
+            self.disabled_reason = "retrain identity model for observed usernames and profile text (schema v2)"
+            return
         if isinstance(artifact, dict):
             stored_features = list(artifact.get("feature_names") or FEATURE_NAMES)
             if stored_features != FEATURE_NAMES:
@@ -403,6 +411,7 @@ class IdentityMatcher:
             "identity_verdict": _verdict(score),
             "false_positive_risk": _risk_label(score),
             "identity_source": source,
+            "score_kind": "uncalibrated_ranking_score",
             "identity_features": features,
             "identity_explanation": _explain(features, score),
         }

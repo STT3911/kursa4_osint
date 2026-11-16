@@ -698,7 +698,7 @@ def save_social_accounts(
         unique_accounts[(site_name.lower(), profile_url)] = {
             "site_name": site_name,
             "profile_url": profile_url,
-            "username": (account.get("username") or username or "").strip(),
+            "username": (account.get("username") or ("" if source == "spiderfoot" else username) or "").strip(),
         }
 
     with get_connection() as conn:
@@ -1080,6 +1080,14 @@ def get_profile_card(user_id: int) -> dict:
         _IDENTITY_MATCHER = IdentityMatcher()
     matcher = _IDENTITY_MATCHER
     social_accounts = matcher.match_many(profile, [dict(row) for row in social_rows])
+    from local_identity_review import load_reviews, format_review
+    from spiderfoot_integration import canonical_url
+    qwen_reviews = load_reviews(user_id, profile, social_accounts)
+    for account in social_accounts:
+        review = qwen_reviews.get(canonical_url(account["profile_url"]))
+        if review:
+            account["qwen_review"] = review
+            account["identity_explanation"] += "\n" + format_review(review)
     for account in social_accounts:
         percent = int(account.get("same_person_percent") or 0)
         account["confidence_score"] = percent
