@@ -22,6 +22,7 @@ from identity_matcher import (
 
 try:
     import joblib
+    from sklearn import __version__ as sklearn_version
     import numpy as np
     from sklearn.calibration import CalibratedClassifierCV
     from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
@@ -306,7 +307,9 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
     joblib.dump(
         {
             "model": model,
+            "sklearn_version": sklearn_version,
             "feature_names": FEATURE_NAMES,
+            "feature_schema_version": 2,
             "classifier": classifier_name,
             "decision_threshold": threshold,
         },

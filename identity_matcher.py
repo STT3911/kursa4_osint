@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from model_artifacts import ModelArtifactError, load_sklearn_artifact
+
 try:
     import joblib
 except ImportError as exc:
@@ -214,7 +216,7 @@ def _bio_url_overlap(profile: dict[str, Any], account: dict[str, Any]) -> float:
         return 0.0
     external_text = " ".join(
         str(account.get(field) or "")
-        for field in ("site_name", "profile_url", "username", "display_name", "bio", "description")
+        for field in ("display_name", "bio", "description", "links")
     )
     external_tokens = tokenize(external_text)
     if not external_tokens:
@@ -224,7 +226,12 @@ def _bio_url_overlap(profile: dict[str, Any], account: dict[str, Any]) -> float:
 
 def build_identity_features(profile: dict[str, Any], account: dict[str, Any]) -> dict[str, float]:
     telegram_username = normalize_identifier(str(profile.get("username") or ""))
-    account_username = normalize_identifier(str(account.get("username") or ""))
+    discovery_only = str(account.get("source") or "").lower() in {
+        "sherlock", "snoop", "maigret", "spiderfoot"
+    }
+    account_username = normalize_identifier(str(
+        account.get("observed_username") or ("" if discovery_only else account.get("username")) or ""
+    ))
     url_username = _extract_username_from_url(str(account.get("profile_url") or ""))
     external_username = account_username or url_username
 
@@ -354,14 +361,25 @@ class IdentityMatcher:
             self.disabled_reason = "model path escapes models directory — refused to load"
             return
         if self.report_path.exists():
-            report = json.loads(self.report_path.read_text(encoding="utf-8"))
-            roc_auc = float(report.get("roc_auc") or 0.0)
+            try:
+                report = json.loads(self.report_path.read_text(encoding="utf-8"))
+                roc_auc = float(report.get("roc_auc") or 0.0)
+            except (OSError, ValueError, TypeError, AttributeError):
+                self.disabled_reason = "identity model disabled: invalid training report"
+                return
             if roc_auc and roc_auc < self.min_roc_auc:
                 self.disabled_reason = (
                     f"trained model disabled: ROC-AUC {roc_auc:.4f} is below {self.min_roc_auc:.2f}"
                 )
                 return
-        artifact = joblib.load(self.model_path)
+        try:
+            artifact = load_sklearn_artifact(self.model_path, MODELS_DIR)
+        except ModelArtifactError as exc:
+            self.disabled_reason = str(exc)
+            return
+        if not isinstance(artifact, dict) or artifact.get("feature_schema_version") != 2:
+            self.disabled_reason = "retrain identity model for observed usernames and profile text (schema v2)"
+            return
         if isinstance(artifact, dict):
             stored_features = list(artifact.get("feature_names") or FEATURE_NAMES)
             if stored_features != FEATURE_NAMES:
@@ -403,6 +421,7 @@ class IdentityMatcher:
             "identity_verdict": _verdict(score),
             "false_positive_risk": _risk_label(score),
             "identity_source": source,
+            "score_kind": "uncalibrated_ranking_score",
             "identity_features": features,
             "identity_explanation": _explain(features, score),
         }

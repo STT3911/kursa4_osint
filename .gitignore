@@ -37,3 +37,8 @@ package.json
 package-lock.json
 pycache_check/
 osint_session.session-journal
+
+# Local LLM weights and snapshots
+models/qwen*/
+*.safetensors
+*.gguf

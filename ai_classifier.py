@@ -6,6 +6,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from model_artifacts import ModelArtifactError, load_sklearn_artifact
+
 try:
     import joblib
 except ImportError as exc:
@@ -169,6 +171,7 @@ class ProfileClassifier:
         self._embedding_model = None
         self._classifier = None
         self._classes: list[str] = []
+        self.disabled_reason = ""
         self._load_classifier()
 
     @property
@@ -182,7 +185,11 @@ class ProfileClassifier:
             self.classifier_path.resolve().relative_to(MODELS_DIR.resolve())
         except ValueError:
             return
-        artifact = joblib.load(self.classifier_path)
+        try:
+            artifact = load_sklearn_artifact(self.classifier_path, MODELS_DIR)
+        except ModelArtifactError as exc:
+            self.disabled_reason = str(exc)
+            return
         if isinstance(artifact, dict):
             self._classifier = artifact.get("classifier")
             self._classes = list(artifact.get("classes") or [])
