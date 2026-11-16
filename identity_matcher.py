@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from model_artifacts import ModelArtifactError, load_sklearn_artifact
+
 try:
     import joblib
 except ImportError as exc:
@@ -359,14 +361,22 @@ class IdentityMatcher:
             self.disabled_reason = "model path escapes models directory — refused to load"
             return
         if self.report_path.exists():
-            report = json.loads(self.report_path.read_text(encoding="utf-8"))
-            roc_auc = float(report.get("roc_auc") or 0.0)
+            try:
+                report = json.loads(self.report_path.read_text(encoding="utf-8"))
+                roc_auc = float(report.get("roc_auc") or 0.0)
+            except (OSError, ValueError, TypeError, AttributeError):
+                self.disabled_reason = "identity model disabled: invalid training report"
+                return
             if roc_auc and roc_auc < self.min_roc_auc:
                 self.disabled_reason = (
                     f"trained model disabled: ROC-AUC {roc_auc:.4f} is below {self.min_roc_auc:.2f}"
                 )
                 return
-        artifact = joblib.load(self.model_path)
+        try:
+            artifact = load_sklearn_artifact(self.model_path, MODELS_DIR)
+        except ModelArtifactError as exc:
+            self.disabled_reason = str(exc)
+            return
         if not isinstance(artifact, dict) or artifact.get("feature_schema_version") != 2:
             self.disabled_reason = "retrain identity model for observed usernames and profile text (schema v2)"
             return

@@ -85,6 +85,9 @@ class OSINTApp(tk.Tk):
         self.link_graph_data: dict | None = None
 
         self._build_ui()
+        if self.profile_classifier.disabled_reason:
+            self._append_log("Классификатор профиля: " + self.profile_classifier.disabled_reason)
+            self._append_log("Для классификации профиля используются правила.")
         self._start_sherlock_worker()
         self._start_snoop_worker()
         self._start_maigret_worker()
@@ -1615,7 +1618,15 @@ class OSINTApp(tk.Tk):
         path = export_security_report(profiles)
         self._append_log(f"Security-отчёт сохранён: {path}")
 
+    def report_callback_exception(self, exc_type, exc_value, traceback) -> None:
+        if issubclass(exc_type, KeyboardInterrupt):
+            self._on_close()
+            return
+        super().report_callback_exception(exc_type, exc_value, traceback)
+
     def _on_close(self) -> None:
+        if self.shutdown_event.is_set():
+            return
         self.shutdown_event.set()
         self.sherlock_queue.put(None)
         self.snoop_queue.put(None)
@@ -1624,7 +1635,11 @@ class OSINTApp(tk.Tk):
 
 def main() -> int:
     app = OSINTApp()
-    app.mainloop()
+    try:
+        app.mainloop()
+    except KeyboardInterrupt:
+        app._on_close()
+        return 130
     return 0
 
 if __name__ == "__main__":

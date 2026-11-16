@@ -22,6 +22,7 @@ from ai_classifier import (
 
 try:
     import joblib
+    from sklearn import __version__ as sklearn_version
     from sentence_transformers import SentenceTransformer
     from sklearn.linear_model import LogisticRegression
     from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
@@ -167,6 +168,7 @@ def train_classifier(args: argparse.Namespace) -> dict[str, Any]:
     MODELS_DIR.mkdir(exist_ok=True)
     artifact = {
         "classifier": classifier,
+        "sklearn_version": sklearn_version,
         "model_name": MODEL_NAME,
         "classes": list(classifier.classes_),
     }
