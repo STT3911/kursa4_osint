@@ -213,7 +213,7 @@ class QwenIdentityReviewer:
             with torch.inference_mode():
                 generated = self._model.generate(
                     **inputs, generation_config=generation_config,
-                    prefix_allowed_tokens_fn=prefix_fn,
+                    use_model_defaults=False, prefix_allowed_tokens_fn=prefix_fn,
                 )
             completion = generated[0][inputs.input_ids.shape[-1]:]
             raw = self._tokenizer.decode(completion, skip_special_tokens=True).strip()
